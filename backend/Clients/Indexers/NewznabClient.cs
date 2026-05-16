@@ -25,9 +25,26 @@ public class NewznabClient(string baseUrl, string apiKey, string userAgent = "Nz
         return body.Contains("<caps", StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<List<NewznabItem>> SearchAsync(string query, int limit, CancellationToken ct = default)
+    public Task<List<NewznabItem>> SearchAsync(string query, int limit, CancellationToken ct = default)
     {
-        var url = $"{_baseUrl}/api?t=search&q={Uri.EscapeDataString(query)}&apikey={Uri.EscapeDataString(apiKey)}&extended=1&limit={limit}";
+        return QueryAsync(new Dictionary<string, string>
+        {
+            ["t"] = "search",
+            ["q"] = query,
+            ["limit"] = limit.ToString(),
+        }, ct);
+    }
+
+    public async Task<List<NewznabItem>> QueryAsync(IReadOnlyDictionary<string, string> queryParams, CancellationToken ct = default)
+    {
+        var parts = new List<string>
+        {
+            $"apikey={Uri.EscapeDataString(apiKey)}",
+            "extended=1",
+        };
+        foreach (var (k, v) in queryParams)
+            parts.Add($"{Uri.EscapeDataString(k)}={Uri.EscapeDataString(v)}");
+        var url = $"{_baseUrl}/api?{string.Join("&", parts)}";
         using var resp = await GetAsync(url, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
         await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);

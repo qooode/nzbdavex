@@ -7,6 +7,7 @@ import { isSabnzbdSettingsUpdated, isSabnzbdSettingsValid, SabnzbdSettings } fro
 import { isWebdavSettingsUpdated, isWebdavSettingsValid, WebdavSettings } from "./webdav/webdav";
 import { isArrsSettingsUpdated, isArrsSettingsValid, ArrsSettings } from "./arrs/arrs";
 import { isIndexersSettingsUpdated, isIndexersSettingsValid, IndexersSettings } from "./indexers/indexers";
+import { isProfilesSettingsUpdated, isProfilesSettingsValid, ProfilesSettings } from "./profiles/profiles";
 import { isMaintenanceSettingsUpdated, Maintenance } from "./maintenance/maintenance";
 import { isRepairsSettingsUpdated, RepairsSettings } from "./repairs/repairs";
 import { isRcloneSettingsUpdated, RcloneSettings } from "./rclone/rclone";
@@ -44,6 +45,7 @@ const defaultConfig = {
     "media.library-dir": "",
     "arr.instances": "{\"RadarrInstances\":[],\"SonarrInstances\":[],\"QueueRules\":[]}",
     "indexers.instances": "{\"Indexers\":[]}",
+    "profiles.instances": "{\"Profiles\":[]}",
     "repair.enable": "false",
     "db.is-startup-vacuum-enabled": "false",
     "maintenance.remove-orphaned-schedule-enabled": "false",
@@ -93,10 +95,11 @@ function Body(props: BodyProps) {
     const isWebdavUpdated = isWebdavSettingsUpdated(config, newConfig);
     const isArrsUpdated = isArrsSettingsUpdated(config, newConfig);
     const isIndexersUpdated = isIndexersSettingsUpdated(config, newConfig);
+    const isProfilesUpdated = isProfilesSettingsUpdated(config, newConfig);
     const isRepairsUpdated = isRepairsSettingsUpdated(config, newConfig);
     const isRcloneUpdated = isRcloneSettingsUpdated(config, newConfig);
     const isMaintenanceUpdated = isMaintenanceSettingsUpdated(config, newConfig);
-    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isRepairsUpdated || isRcloneUpdated || isMaintenanceUpdated;
+    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isProfilesUpdated || isRepairsUpdated || isRcloneUpdated || isMaintenanceUpdated;
     const navigationBlocker = useNavigationBlocker(isUpdated);
 
     const usenetTitle = iseUsenetUpdated ? "✏️ Usenet" : "Usenet";
@@ -104,6 +107,7 @@ function Body(props: BodyProps) {
     const webdavTitle = isWebdavUpdated ? "✏️ WebDAV" : "WebDAV";
     const arrsTitle = isArrsUpdated ? "✏️ Radarr/Sonarr" : "Radarr/Sonarr";
     const indexersTitle = isIndexersUpdated ? "✏️ Indexers" : "Indexers";
+    const profilesTitle = isProfilesUpdated ? "✏️ Profiles" : "Profiles";
     const repairsTitle = isRepairsUpdated ? "✏️ Repairs" : "Repairs";
     const rcloneTitle = isRcloneUpdated ? "✏️ Rclone Server" : "Rclone Server";
     const maintenanceTitle = isMaintenanceUpdated ? "✏️ Maintenance" : "Maintenance";
@@ -115,6 +119,7 @@ function Body(props: BodyProps) {
         : isWebdavUpdated && !isWebdavSettingsValid(newConfig) ? "Invalid WebDAV settings"
         : isArrsUpdated && !isArrsSettingsValid(newConfig) ? "Invalid Arrs settings"
         : isIndexersUpdated && !isIndexersSettingsValid(newConfig) ? "Invalid Indexers settings"
+        : isProfilesUpdated && !isProfilesSettingsValid(newConfig) ? "Invalid Profiles settings"
         : "Save";
     const saveButtonVariant = saveButtonLabel === "Save" ? "primary"
         : saveButtonLabel === "Saved ✅" ? "success"
@@ -167,6 +172,9 @@ function Body(props: BodyProps) {
                 </Tab>
                 <Tab eventKey="indexers" title={indexersTitle}>
                     <IndexersSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="profiles" title={profilesTitle}>
+                    <ProfilesSettings config={newConfig} setNewConfig={setNewConfig} />
                 </Tab>
                 <Tab eventKey="repairs" title={repairsTitle}>
                     <RepairsSettings config={newConfig} setNewConfig={setNewConfig} />

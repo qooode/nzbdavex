@@ -212,6 +212,11 @@ public class ConfigManager
         return GetConfigValue<IndexerConfig>("indexers.instances") ?? new IndexerConfig();
     }
 
+    public ProfileConfig GetProfileConfig()
+    {
+        return GetConfigValue<ProfileConfig>("profiles.instances") ?? new ProfileConfig();
+    }
+
     public string GetDuplicateNzbBehavior()
     {
         var defaultValue = "increment";
