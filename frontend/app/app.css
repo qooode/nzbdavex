@@ -1,0 +1,27 @@
+:root {
+  --top-nav-height: 60px;
+  --left-nav-width: 270px;
+  --body-background-color: hsl(198 100% 4%);
+  --top-nav-background-color: hsl(200 100% 7.65%);
+  --left-nav-background-color: hsl(196.8 100% 4.9%);
+  --page-padding: 25px;
+}
+
+html, body {
+  margin: 0;
+  min-width: 100%;
+  min-height: 100%;
+  position: absolute;
+  background-color: var(--body-background-color);
+  color: white;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* bootstrap overrides */
+.modal-open {
+  overflow-y: unset !important;
+}
+.modal {
+  --bs-modal-margin: 20px !important;
+  --bs-modal-bg: hsl(196.8 25% 14.51%);
+}

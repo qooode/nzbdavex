@@ -1,0 +1,56 @@
+{
+  "name": "nzb-webdav",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "react-router build",
+    "build:server": "tsc -p tsconfig.node.json --outDir dist-node",
+    "dev": "cross-env NODE_ENV=development PORT=5173 tsx server.js",
+    "start": "node dist-node/server.js",
+    "typecheck": "react-router typegen && tsc -b"
+  },
+  "dependencies": {
+    "@react-router/express": "^7.14.0",
+    "@react-router/fs-routes": "^7.14.0",
+    "@react-router/node": "^7.5.3",
+    "bootstrap": "^5.3.8",
+    "compression": "^1.7.5",
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^3.0.5",
+    "isbot": "^5.1.37",
+    "mime-types": "^3.0.2",
+    "morgan": "^1.10.0",
+    "react": "^19.2.5",
+    "react-bootstrap": "^2.10.10",
+    "react-dom": "^19.2.5",
+    "react-dropzone": "^15.0.0",
+    "react-router": "^7.5.3",
+    "remix-auth": "^4.2.0",
+    "remix-auth-form": "^3.0.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.5.3",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/compression": "^1.7.5",
+    "@types/express": "^5.0.6",
+    "@types/express-serve-static-core": "^5.1.1",
+    "@types/mime-types": "^3.0.1",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^25",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "cross-env": "^10.1.0",
+    "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
+    "typed-css-modules": "^0.9.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.7"
+  },
+  "overrides": {
+    "http-proxy-middleware": {
+      "http-proxy": "npm:http-proxy-node16@^1.0.6"
+    }
+  }
+}

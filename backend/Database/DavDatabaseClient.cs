@@ -1,0 +1,267 @@
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using NzbWebDAV.Database.Models;
+
+namespace NzbWebDAV.Database;
+
+public sealed class DavDatabaseClient(DavDatabaseContext ctx)
+{
+    public DavDatabaseContext Ctx => ctx;
+
+    // file
+    public Task<DavItem?> GetFileById(string id)
+    {
+        var guid = Guid.Parse(id);
+        return ctx.Items.Where(i => i.Id == guid).FirstOrDefaultAsync();
+    }
+
+    public Task<List<DavItem>> GetFilesByIdPrefix(string prefix)
+    {
+        return ctx.Items
+            .Where(i => i.IdPrefix == prefix)
+            .Where(i => i.Type == DavItem.ItemType.UsenetFile)
+            .ToListAsync();
+    }
+
+    // directory
+    public Task<List<DavItem>> GetDirectoryChildrenAsync(Guid dirId, CancellationToken ct = default)
+    {
+        return ctx.Items.Where(x => x.ParentId == dirId).ToListAsync(ct);
+    }
+
+    public Task<DavItem?> GetDirectoryChildAsync(Guid dirId, string childName, CancellationToken ct = default)
+    {
+        return ctx.Items.FirstOrDefaultAsync(x => x.ParentId == dirId && x.Name == childName, ct);
+    }
+
+    public async Task<long> GetRecursiveSize(Guid dirId, CancellationToken ct = default)
+    {
+        if (dirId == DavItem.Root.Id)
+        {
+            return await Ctx.Items.SumAsync(x => x.FileSize, ct).ConfigureAwait(false) ?? 0;
+        }
+
+        const string sql = @"
+            WITH RECURSIVE RecursiveChildren AS (
+                SELECT Id, FileSize
+                FROM DavItems
+                WHERE ParentId = @parentId
+
+                UNION ALL
+
+                SELECT d.Id, d.FileSize
+                FROM DavItems d
+                INNER JOIN RecursiveChildren rc ON d.ParentId = rc.Id
+            )
+            SELECT IFNULL(SUM(FileSize), 0)
+            FROM RecursiveChildren;
+        ";
+        var connection = Ctx.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@parentId";
+        parameter.Value = dirId;
+        command.Parameters.Add(parameter);
+        var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return Convert.ToInt64(result);
+    }
+
+    // usenet files
+    public async Task<DavNzbFile?> GetDavNzbFileAsync(DavItem davItem, CancellationToken ct = default)
+    {
+        // attempt to read from blob-store
+        var blobId = davItem.FileBlobId;
+        if (blobId.HasValue)
+        {
+            var blob = await BlobStore.ReadBlob<DavNzbFile>(blobId.Value);
+            if (blob is not null) return blob;
+        }
+
+        // read from database
+        return await ctx.NzbFiles
+            .FirstOrDefaultAsync(x => x.Id == davItem.Id, ct)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DavRarFile?> GetDavRarFileAsync(DavItem davItem, CancellationToken ct = default)
+    {
+        // attempt to read from blob-store
+        var blobId = davItem.FileBlobId;
+        if (blobId.HasValue)
+        {
+            var blob = await BlobStore.ReadBlob<DavRarFile>(blobId.Value);
+            if (blob is not null) return blob;
+        }
+
+        // read from database
+        return await ctx.RarFiles
+            .FirstOrDefaultAsync(x => x.Id == davItem.Id, ct)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DavMultipartFile?> GetDavMultipartFileAsync(DavItem davItem, CancellationToken ct = default)
+    {
+        // attempt to read from blob-store
+        var blobId = davItem.FileBlobId;
+        if (blobId.HasValue)
+        {
+            var blob = await BlobStore.ReadBlob<DavMultipartFile>(blobId.Value);
+            if (blob is not null) return blob;
+        }
+
+        // read from database
+        return await ctx.MultipartFiles
+            .FirstOrDefaultAsync(x => x.Id == davItem.Id, ct)
+            .ConfigureAwait(false);
+    }
+
+    // queue
+    public async Task<(QueueItem? queueItem, Stream? queueNzbStream)> GetTopQueueItem
+    (
+        CancellationToken ct = default
+    )
+    {
+        // read queue item from database
+        var nowTime = DateTime.Now;
+        var queueItem = await Ctx.QueueItems
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.CreatedAt)
+            .Where(q => q.PauseUntil == null || nowTime >= q.PauseUntil)
+            .Skip(0)
+            .Take(1)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+        // attempt to read nzb contents from blob-store.
+        var queueNzbStream = queueItem != null
+            ? BlobStore.ReadBlob(queueItem.Id)
+            : null;
+
+        // otherwise, read nzb contents from database.
+        if (queueItem != null && queueNzbStream == null)
+        {
+            var queueNzbContents = await Ctx.QueueNzbContents
+                .FirstOrDefaultAsync(q => q.Id == queueItem.Id, ct)
+                .ConfigureAwait(false);
+
+            queueNzbStream = queueNzbContents != null
+                ? new MemoryStream(Encoding.UTF8.GetBytes(queueNzbContents.NzbContents))
+                : null;
+        }
+
+        // return
+        return (queueItem, queueNzbStream);
+    }
+
+    public Task<QueueItem[]> GetQueueItems
+    (
+        string? category,
+        int start = 0,
+        int limit = int.MaxValue,
+        CancellationToken ct = default
+    )
+    {
+        var queueItems = category != null
+            ? Ctx.QueueItems.Where(q => q.Category == category)
+            : Ctx.QueueItems;
+        return queueItems
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.CreatedAt)
+            .Skip(start)
+            .Take(limit)
+            .ToArrayAsync(cancellationToken: ct);
+    }
+
+    public Task<int> GetQueueItemsCount(string? category, CancellationToken ct = default)
+    {
+        var queueItems = category != null
+            ? Ctx.QueueItems.Where(q => q.Category == category)
+            : Ctx.QueueItems;
+        return queueItems.CountAsync(cancellationToken: ct);
+    }
+
+    public async Task RemoveQueueItemsAsync(List<Guid> ids, CancellationToken ct = default)
+    {
+        await Ctx.QueueItems
+            .Where(x => ids.Contains(x.Id))
+            .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+    }
+
+    // history
+    public async Task<HistoryItem?> GetHistoryItemAsync(string id)
+    {
+        return await Ctx.HistoryItems.FirstOrDefaultAsync(x => x.Id == Guid.Parse(id)).ConfigureAwait(false);
+    }
+
+    public async Task RemoveHistoryItemsAsync(List<Guid> ids, bool deleteFiles, CancellationToken ct = default)
+    {
+        if (deleteFiles)
+        {
+            var results = await (
+                from h in Ctx.HistoryItems
+                where ids.Contains(h.Id)
+                join d in Ctx.Items on h.DownloadDirId equals d.Id into items
+                from d in items.DefaultIfEmpty()
+                select new { HistoryItem = h, DavItem = d }
+            ).ToListAsync(ct).ConfigureAwait(false);
+
+            var historyItems = results.Select(r => r.HistoryItem).ToList();
+            var davItems = results.Where(r => r.DavItem != null).Select(r => r.DavItem!).ToList();
+            Ctx.Items.RemoveRange(davItems);
+            Ctx.HistoryItems.RemoveRange(historyItems);
+            Ctx.HistoryCleanupItems.AddRange(historyItems.Select(x => new HistoryCleanupItem
+            {
+                Id = x.Id,
+                DeleteMountedFiles = deleteFiles
+            }));
+            return;
+        }
+
+        Ctx.HistoryItems.RemoveRange(ids.Select(id => new HistoryItem() { Id = id }));
+        Ctx.HistoryCleanupItems.AddRange(ids.Select(x => new HistoryCleanupItem
+        {
+            Id = x,
+            DeleteMountedFiles = deleteFiles
+        }));
+    }
+
+    private class FileSizeResult
+    {
+        public long TotalSize { get; init; }
+    }
+
+    // health check
+    public async Task<List<HealthCheckStat>> GetHealthCheckStatsAsync
+    (
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    )
+    {
+        return await Ctx.HealthCheckStats
+            .Where(h => h.DateStartInclusive >= from && h.DateStartInclusive <= to)
+            .GroupBy(h => new { h.Result, h.RepairStatus })
+            .Select(g => new HealthCheckStat
+            {
+                Result = g.Key.Result,
+                RepairStatus = g.Key.RepairStatus,
+                Count = g.Select(r => r.Count).Sum(),
+            })
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    // completed-symlinks
+    public async Task<List<DavItem>> GetCompletedSymlinkCategoryChildren(string category,
+        CancellationToken ct = default)
+    {
+        var query = from historyItem in Ctx.HistoryItems
+            where historyItem.Category == category
+                  && historyItem.DownloadStatus == HistoryItem.DownloadStatusOption.Completed
+                  && historyItem.DownloadDirId != null
+            join davItem in Ctx.Items on historyItem.DownloadDirId equals davItem.Id
+            where davItem.Type == DavItem.ItemType.Directory
+            select davItem;
+        return await query.Distinct().ToListAsync(ct).ConfigureAwait(false);
+    }
+}

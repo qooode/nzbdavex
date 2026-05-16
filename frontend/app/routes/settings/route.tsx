@@ -1,0 +1,235 @@
+import type { Route } from "./+types/route";
+import styles from "./route.module.css"
+import { Tabs, Tab, Button } from "react-bootstrap"
+import { backendClient } from "~/clients/backend-client.server";
+import { isUsenetSettingsUpdated, UsenetSettings } from "./usenet/usenet";
+import { isSabnzbdSettingsUpdated, isSabnzbdSettingsValid, SabnzbdSettings } from "./sabnzbd/sabnzbd";
+import { isWebdavSettingsUpdated, isWebdavSettingsValid, WebdavSettings } from "./webdav/webdav";
+import { isArrsSettingsUpdated, isArrsSettingsValid, ArrsSettings } from "./arrs/arrs";
+import { isMaintenanceSettingsUpdated, Maintenance } from "./maintenance/maintenance";
+import { isRepairsSettingsUpdated, RepairsSettings } from "./repairs/repairs";
+import { isRcloneSettingsUpdated, RcloneSettings } from "./rclone/rclone";
+import { useCallback, useState } from "react";
+import { useBlocker } from "react-router";
+import { ConfirmModal } from "~/components/confirm-modal/confirm-modal";
+
+const defaultConfig = {
+    "general.base-url": "",
+    "api.key": "",
+    "api.categories": "",
+    "api.manual-category": "uncategorized",
+    "api.ensure-importable-video": "true",
+    "api.ensure-article-existence-categories": "",
+    "api.ignore-history-limit": "true",
+    "api.download-file-blocklist": "*.nfo, *.par2, *.sfv, *sample.mkv",
+    "api.duplicate-nzb-behavior": "increment",
+    "api.import-strategy": "symlinks",
+    "api.completed-downloads-dir": "",
+    "api.user-agent": "",
+    "usenet.providers": "",
+    "usenet.max-download-connections": "15",
+    "usenet.streaming-priority": "80",
+    "usenet.article-buffer-size": "40",
+    "webdav.user": "admin",
+    "webdav.pass": "",
+    "webdav.show-hidden-files": "false",
+    "webdav.enforce-readonly": "true",
+    "webdav.preview-par2-files": "false",
+    "rclone.rc-enabled": "false",
+    "rclone.host": "",
+    "rclone.user": "",
+    "rclone.pass": "",
+    "rclone.mount-dir": "",
+    "media.library-dir": "",
+    "arr.instances": "{\"RadarrInstances\":[],\"SonarrInstances\":[],\"QueueRules\":[]}",
+    "repair.enable": "false",
+    "db.is-startup-vacuum-enabled": "false",
+    "maintenance.remove-orphaned-schedule-enabled": "false",
+    "maintenance.remove-orphaned-schedule-time": "0",
+    "api.nzb-backup-enabled": "false",
+    "api.nzb-backup-location": "",
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+    // fetch the config items
+    var configItems = await backendClient.getConfig(Object.keys(defaultConfig));
+
+    // transform to a map
+    const config: Record<string, string> = defaultConfig;
+    for (const item of configItems) {
+        config[item.configName] = item.configValue;
+    }
+
+    return {
+        config: config,
+        appVersion: process.env.NZBDAV_VERSION ?? "unknown",
+    }
+}
+
+export default function Settings(props: Route.ComponentProps) {
+    return (
+        <Body {...props.loaderData} />
+    );
+}
+
+type BodyProps = {
+    config: Record<string, string>,
+    appVersion: string,
+};
+
+function Body(props: BodyProps) {
+    // stateful variables
+    const [config, setConfig] = useState(props.config);
+    const [newConfig, setNewConfig] = useState(config);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
+    const [activeTab, setActiveTab] = useState('usenet');
+
+    // derived variables
+    const iseUsenetUpdated = isUsenetSettingsUpdated(config, newConfig);
+    const isSabnzbdUpdated = isSabnzbdSettingsUpdated(config, newConfig);
+    const isWebdavUpdated = isWebdavSettingsUpdated(config, newConfig);
+    const isArrsUpdated = isArrsSettingsUpdated(config, newConfig);
+    const isRepairsUpdated = isRepairsSettingsUpdated(config, newConfig);
+    const isRcloneUpdated = isRcloneSettingsUpdated(config, newConfig);
+    const isMaintenanceUpdated = isMaintenanceSettingsUpdated(config, newConfig);
+    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isRepairsUpdated || isRcloneUpdated || isMaintenanceUpdated;
+    const navigationBlocker = useNavigationBlocker(isUpdated);
+
+    const usenetTitle = iseUsenetUpdated ? "✏️ Usenet" : "Usenet";
+    const sabnzbdTitle = isSabnzbdUpdated ? "✏️ SABnzbd " : "SABnzbd";
+    const webdavTitle = isWebdavUpdated ? "✏️ WebDAV" : "WebDAV";
+    const arrsTitle = isArrsUpdated ? "✏️ Radarr/Sonarr" : "Radarr/Sonarr";
+    const repairsTitle = isRepairsUpdated ? "✏️ Repairs" : "Repairs";
+    const rcloneTitle = isRcloneUpdated ? "✏️ Rclone Server" : "Rclone Server";
+    const maintenanceTitle = isMaintenanceUpdated ? "✏️ Maintenance" : "Maintenance";
+
+    const saveButtonLabel = isSaving ? "Saving..."
+        : !isUpdated && isSaved ? "Saved ✅"
+        : !isUpdated && !isSaved ? "There are no changes to save"
+        : isSabnzbdUpdated && !isSabnzbdSettingsValid(newConfig) ? "Invalid SABnzbd settings"
+        : isWebdavUpdated && !isWebdavSettingsValid(newConfig) ? "Invalid WebDAV settings"
+        : isArrsUpdated && !isArrsSettingsValid(newConfig) ? "Invalid Arrs settings"
+        : "Save";
+    const saveButtonVariant = saveButtonLabel === "Save" ? "primary"
+        : saveButtonLabel === "Saved ✅" ? "success"
+        : "secondary";
+    const isSaveButtonDisabled = saveButtonLabel !== "Save";
+
+    // events
+    const onClear = useCallback(() => {
+        setNewConfig(config);
+        setIsSaved(false);
+    }, [config, setNewConfig]);
+
+    const onSave = useCallback(async () => {
+        setIsSaving(true);
+        setIsSaved(false);
+        const response = await fetch("/settings/update", {
+            method: "POST",
+            body: (() => {
+                const form = new FormData();
+                const changedConfig = getChangedConfig(config, newConfig);
+                form.append("config", JSON.stringify(changedConfig));
+                return form;
+            })()
+        });
+        if (response.ok) {
+            setConfig(newConfig);
+        }
+        setIsSaving(false);
+        setIsSaved(true);
+    }, [config, newConfig, setIsSaving, setIsSaved, setConfig]);
+
+    return (
+        <div className={styles.container}>
+            <Tabs
+                activeKey={activeTab}
+                onSelect={x => setActiveTab(x!)}
+                className={styles.tabs}
+            >
+                <Tab eventKey="usenet" title={usenetTitle}>
+                    <UsenetSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="sabnzbd" title={sabnzbdTitle}>
+                    <SabnzbdSettings config={newConfig} setNewConfig={setNewConfig} appVersion={props.appVersion} />
+                </Tab>
+                <Tab eventKey="webdav" title={webdavTitle}>
+                    <WebdavSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="arrs" title={arrsTitle}>
+                    <ArrsSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="repairs" title={repairsTitle}>
+                    <RepairsSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="rclone" title={rcloneTitle}>
+                    <RcloneSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="maintenance" title={maintenanceTitle}>
+                    <Maintenance savedConfig={config} config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+            </Tabs>
+            <hr />
+            {isUpdated && <Button
+                className={styles.button}
+                variant="secondary"
+                disabled={!isUpdated}
+                onClick={() => onClear()}>
+                Clear
+            </Button>}
+            <Button
+                className={styles.button}
+                variant={saveButtonVariant}
+                disabled={isSaveButtonDisabled}
+                onClick={onSave}>
+                {saveButtonLabel}
+            </Button>
+            <ConfirmModal
+                show={navigationBlocker.showConfirmation}
+                title="Unsaved Changes"
+                message={<>You have unsaved changes.<br/>Are you sure you want to leave this page?</>}
+                cancelText="Stay"
+                confirmText="Leave"
+                onCancel={navigationBlocker.onCancelNavigation}
+                onConfirm={navigationBlocker.onConfirmNavigation}
+            />
+        </div>
+    );
+}
+
+function getChangedConfig(
+    config: Record<string, string>,
+    newConfig: Record<string, string>
+): Record<string, string> {
+    let changedConfig: Record<string, string> = {};
+    let configKeys = Object.keys(defaultConfig);
+    for (const configKey of configKeys) {
+        if (config[configKey] !== newConfig[configKey]) {
+            changedConfig[configKey] = newConfig[configKey];
+        }
+    }
+    return changedConfig;
+}
+
+function useNavigationBlocker(isConfigUpdated: boolean) {
+    const blocker = useBlocker(isConfigUpdated);
+
+    const onConfirmNavigation = useCallback(() => {
+        if (blocker.state === "blocked") {
+            blocker.proceed();
+        }
+    }, [blocker]);
+
+    const onCancelNavigation = useCallback(() => {
+        if (blocker.state === "blocked") {
+            blocker.reset();
+        }
+    }, [blocker]);
+
+    return {
+        showConfirmation: blocker.state === "blocked",
+        onConfirmNavigation,
+        onCancelNavigation
+    }
+}

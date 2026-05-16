@@ -1,0 +1,112 @@
+﻿using System.Security.Cryptography;
+using NzbWebDAV.Extensions;
+using NzbWebDAV.Models;
+using NzbWebDAV.Models.Nzb;
+using NzbWebDAV.Par2Recovery.Packets;
+using NzbWebDAV.Queue.DeobfuscationSteps._1.FetchFirstSegment;
+using NzbWebDAV.Utils;
+
+namespace NzbWebDAV.Queue.DeobfuscationSteps._3.GetFileInfos;
+
+public static class GetFileInfosStep
+{
+    public static List<FileInfo> GetFileInfos
+    (
+        List<FetchFirstSegmentsStep.NzbFileWithFirstSegment> files,
+        List<FileDesc> par2FileDescriptors
+    )
+    {
+        using var md5 = MD5.Create();
+        var hashToFileDescMap = GetHashToFileDescMap(par2FileDescriptors);
+        var filesInfos = files
+            .Select(x => GetFileInfo(x, hashToFileDescMap, md5))
+            .ToList();
+
+        return filesInfos;
+    }
+
+    private static Dictionary<string, LinkedList<FileDesc>> GetHashToFileDescMap(List<FileDesc> par2FileDescriptors)
+    {
+        var hashToFileDescMap = new Dictionary<string, LinkedList<FileDesc>>();
+        foreach (var descriptor in par2FileDescriptors)
+        {
+            var hash = BitConverter.ToString(descriptor.File16kHash);
+            if (!hashToFileDescMap.TryGetValue(hash, out var list))
+            {
+                list = new LinkedList<FileDesc>();
+                hashToFileDescMap[hash] = list;
+            }
+            list.AddLast(descriptor);
+        }
+
+        return hashToFileDescMap;
+    }
+
+    private static FileInfo GetFileInfo(
+        FetchFirstSegmentsStep.NzbFileWithFirstSegment file,
+        Dictionary<string, LinkedList<FileDesc>> hashToFiledescMap,
+        MD5 md5
+    )
+    {
+        var fileDesc = GetMatchingFileDescriptor(file, hashToFiledescMap, md5);
+        var subjectFileName = file.NzbFile.GetSubjectFileName();
+        var headerFileName = file.Header?.FileName ?? "";
+        var par2FileName = fileDesc?.FileName ?? "";
+        var filename = new List<(string? FileName, int Priority)>
+        {
+            (FileName: par2FileName, Priority: GetFilenamePriority(par2FileName, 3)),
+            (FileName: subjectFileName, Priority: GetFilenamePriority(subjectFileName, 2)),
+            (FileName: headerFileName, Priority: GetFilenamePriority(headerFileName, 1)),
+        }.Where(x => x.FileName is not null).MaxBy(x => x.Priority).FileName ?? "";
+
+        return new FileInfo()
+        {
+            NzbFile = file.NzbFile,
+            FileName = filename,
+            ReleaseDate = file.ReleaseDate,
+            FileSize = (long?)fileDesc?.FileLength,
+            IsRar = file.HasRar4Magic() || file.HasRar5Magic(),
+        };
+    }
+
+    private static int GetFilenamePriority(string? filename, int startingPriority)
+    {
+        var priority = startingPriority;
+        if (string.IsNullOrWhiteSpace(filename)) return priority - 5000;
+        if (ObfuscationUtil.IsProbablyObfuscated(filename)) priority -= 1000;
+        if (FilenameUtil.IsImportantFileType(filename)) priority += 50;
+        if (Path.GetExtension(filename).TrimStart('.').Length is >= 2 and <= 4) priority += 10;
+        return priority;
+    }
+
+    private static FileDesc? GetMatchingFileDescriptor
+    (
+        FetchFirstSegmentsStep.NzbFileWithFirstSegment file,
+        Dictionary<string, LinkedList<FileDesc>> hashToFiledescMap,
+        MD5 md5
+    )
+    {
+        var hash = !file.MissingFirstSegment ? BitConverter.ToString(md5.ComputeHash(file.First16KB!)) : "";
+        if (!hashToFiledescMap.TryGetValue(hash, out var fileDescs)) return null;
+        var fileDesc = fileDescs.First!.Value;
+        if (fileDescs.Count > 1) fileDescs.RemoveFirst();
+        return IsCloseToYencodedSize((long)fileDesc.FileLength, file.NzbFile.GetTotalYencodedSize())
+            ? fileDesc
+            : null;
+    }
+
+    private static bool IsCloseToYencodedSize(long fileSize, long totalYencodedSize)
+    {
+        var range = new LongRange(95 * totalYencodedSize / 100, totalYencodedSize);
+        return range.Contains(fileSize);
+    }
+
+    public record FileInfo
+    {
+        public required NzbFile NzbFile { get; init; }
+        public required string FileName { get; init; }
+        public required DateTimeOffset ReleaseDate { get; init; }
+        public long? FileSize { get; init; }
+        public bool IsRar { get; init; }
+    }
+}

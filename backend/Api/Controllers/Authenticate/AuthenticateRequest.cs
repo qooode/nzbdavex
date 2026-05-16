@@ -1,0 +1,24 @@
+﻿using Microsoft.AspNetCore.Http;
+using NzbWebDAV.Database.Models;
+
+namespace NzbWebDAV.Api.Controllers.Authenticate;
+
+public class AuthenticateRequest
+{
+    public Account.AccountType Type { get; init; }
+    public string Username { get; init; }
+    public string Password { get; init; }
+
+    public AuthenticateRequest(HttpContext context)
+    {
+        Username = context.Request.Form["username"].FirstOrDefault()?.ToLower() ??
+            throw new BadHttpRequestException("Username is required");
+
+        Password = context.Request.Form["password"].FirstOrDefault() ??
+            throw new BadHttpRequestException("Password is required");
+
+        Type = !Enum.TryParse<Account.AccountType>(context.Request.Form["type"], ignoreCase: true, out var parsedType)
+            ? throw new BadHttpRequestException("Invalid account type")
+            : parsedType;
+    }
+}
