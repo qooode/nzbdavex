@@ -9,6 +9,7 @@ declare const styles: {
   readonly "item": string;
   readonly "logout-icon": string;
   readonly "queue-icon": string;
+  readonly "search-icon": string;
   readonly "settings-icon": string;
   readonly "stream-icon": string;
   readonly "title": string;

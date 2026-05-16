@@ -1,0 +1,75 @@
+.container {
+    padding: 20px;
+    color: #93a1a1;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.searchBar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.searchBar input {
+    flex: 1;
+}
+
+.statusRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.statusOk {
+    color: #859900;
+}
+
+.statusFail {
+    color: #dc322f;
+}
+
+.statusError {
+    color: #dc322f;
+    font-style: italic;
+}
+
+.empty {
+    color: #93a1a1;
+    font-style: italic;
+    padding: 20px;
+    background-color: #002b36;
+    border: 1px solid #586e75;
+    border-radius: 8px;
+}
+
+.results {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.result {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.title {
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+
+.meta {
+    font-size: 12px;
+    color: #586e75;
+    margin-top: 4px;
+}
+
+.mountBtn {
+    white-space: nowrap;
+}

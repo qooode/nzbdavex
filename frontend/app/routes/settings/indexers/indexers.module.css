@@ -1,0 +1,73 @@
+.container {
+    max-width: 400px;
+}
+
+.section {
+    margin-bottom: 30px;
+}
+
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.instanceCard {
+    color: #93a1a1;
+    background-color: #02181d;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 20px;
+    position: relative;
+}
+
+.closeButton {
+    line-height: 15px;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    text-align: center;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #93a1a1;
+    font-size: 21px;
+    cursor: pointer;
+    transition: color 0.1s ease;
+}
+
+.closeButton:hover {
+    color: white;
+}
+
+.input {
+    margin-bottom: 8px;
+}
+
+.input::placeholder {
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.alertMessage {
+    color: #93a1a1;
+    font-style: italic;
+    padding: 20px;
+    background-color: #002b36;
+    border: 1px solid #586e75;
+    border-radius: 8px;
+}
+
+.testButton {
+    white-space: nowrap;
+    color: white;
+    font-size: 14px;
+}
+
+.enabledRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}

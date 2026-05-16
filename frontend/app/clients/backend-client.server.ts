@@ -119,6 +119,49 @@ class BackendClient {
         return data.nzo_ids[0];
     }
 
+    public async searchIndexers(q: string, limit: number = 100): Promise<SearchIndexersResponse> {
+        const url = process.env.BACKEND_URL + "/api/search-indexers";
+        const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "x-api-key": apiKey },
+            body: (() => {
+                const form = new FormData();
+                form.append("q", q);
+                form.append("limit", String(limit));
+                return form;
+            })()
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to search indexers: ${(await response.json()).error}`);
+        }
+        return await response.json();
+    }
+
+    public async addNzbFromUrl(nzbUrl: string, nzbName: string): Promise<string> {
+        const config = await this.getConfig(["api.manual-category"]);
+        const category = config.find(item => item.configName === "api.manual-category")?.configValue || "uncategorized";
+        const params = new URLSearchParams({
+            mode: "addurl",
+            cat: category,
+            priority: "0",
+            pp: "0",
+            name: nzbUrl,
+            nzbname: nzbName,
+        });
+        const url = process.env.BACKEND_URL + `/api?${params.toString()}`;
+        const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
+        const response = await fetch(url, { method: "POST", headers: { "x-api-key": apiKey } });
+        if (!response.ok) {
+            throw new Error(`Failed to add nzb url: ${(await response.json()).error}`);
+        }
+        const data = await response.json();
+        if (!data.nzo_ids || data.nzo_ids.length !== 1) {
+            throw new Error("Failed to add nzb url: unexpected response format");
+        }
+        return data.nzo_ids[0];
+    }
+
     public async listWebdavDirectory(directory: string): Promise<DirectoryItem[]> {
         const url = process.env.BACKEND_URL + "/api/list-webdav-directory";
 
@@ -274,6 +317,29 @@ export type DirectoryItem = {
 export type ConfigItem = {
     configName: string,
     configValue: string,
+}
+
+export type SearchIndexersResponse = {
+    status: boolean,
+    error?: string,
+    results: SearchIndexerResult[],
+    indexers: IndexerStatus[],
+}
+
+export type SearchIndexerResult = {
+    indexer: string,
+    title: string,
+    nzbUrl: string,
+    size: number,
+    posted: string | null,
+}
+
+export type IndexerStatus = {
+    name: string,
+    ok: boolean,
+    resultCount: number,
+    error: string | null,
+    elapsedMs: number,
 }
 
 export type TestUsenetConnectionRequest = {

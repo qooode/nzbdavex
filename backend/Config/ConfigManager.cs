@@ -207,6 +207,11 @@ public class ConfigManager
         return GetConfigValue<UsenetProviderConfig>("usenet.providers") ?? defaultValue;
     }
 
+    public IndexerConfig GetIndexerConfig()
+    {
+        return GetConfigValue<IndexerConfig>("indexers.instances") ?? new IndexerConfig();
+    }
+
     public string GetDuplicateNzbBehavior()
     {
         var defaultValue = "increment";
