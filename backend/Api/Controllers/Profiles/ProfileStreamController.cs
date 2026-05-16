@@ -11,7 +11,8 @@ namespace NzbWebDAV.Api.Controllers.Profiles;
 public class ProfileStreamController(
     ConfigManager configManager,
     NzbResolutionCache cache,
-    NewznabRateLimiter rateLimiter
+    NewznabRateLimiter rateLimiter,
+    TvdbIdResolver tvdbResolver
 ) : ControllerBase
 {
     [HttpOptions]
@@ -36,10 +37,9 @@ public class ProfileStreamController(
 
         if (indexers.Count == 0) return new JsonResult(new { streams = Array.Empty<object>() });
 
-        var queryParams = BuildQuery(type, id);
-        if (queryParams is null) return new JsonResult(new { streams = Array.Empty<object>() });
-
         var ct = HttpContext.RequestAborted;
+        var queryParams = await BuildQueryAsync(type, id, ct).ConfigureAwait(false);
+        if (queryParams is null) return new JsonResult(new { streams = Array.Empty<object>() });
 
         var perIndexer = await Task.WhenAll(indexers.Select(async x =>
         {
@@ -79,7 +79,7 @@ public class ProfileStreamController(
         return new JsonResult(new { streams });
     }
 
-    private static IReadOnlyDictionary<string, string>? BuildQuery(string type, string id)
+    private async Task<IReadOnlyDictionary<string, string>?> BuildQueryAsync(string type, string id, CancellationToken ct)
     {
         if (type == "movie")
         {
@@ -101,15 +101,18 @@ public class ProfileStreamController(
             if (imdb is null) return null;
             if (!int.TryParse(parts[1], out var season)) return null;
             if (!int.TryParse(parts[2], out var episode)) return null;
-            return new Dictionary<string, string>
+            var dict = new Dictionary<string, string>
             {
                 ["t"] = "tvsearch",
-                ["imdbid"] = imdb,
                 ["season"] = season.ToString(),
                 ["ep"] = episode.ToString(),
                 ["cat"] = "5000",
                 ["limit"] = "200",
             };
+            var tvdb = await tvdbResolver.GetTvdbIdAsync(imdb, ct).ConfigureAwait(false);
+            if (tvdb.HasValue) dict["tvdbid"] = tvdb.Value.ToString();
+            else dict["imdbid"] = imdb;
+            return dict;
         }
         return null;
     }

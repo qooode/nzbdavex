@@ -93,6 +93,7 @@ class Program
             .AddSingleton<QueueManager>()
             .AddSingleton<NzbResolutionCache>()
             .AddSingleton<NewznabRateLimiter>()
+            .AddSingleton<TvdbIdResolver>()
             .AddHostedService<HealthCheckService>()
             .AddHostedService<ArrMonitoringService>()
             .AddHostedService<BlobCleanupService>()
