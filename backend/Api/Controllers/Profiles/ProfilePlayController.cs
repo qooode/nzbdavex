@@ -56,6 +56,24 @@ public class ProfilePlayController(
             return BuildRedirect(entry.DavItemId.Value, entry.VideoExtension);
 
         var ct = HttpContext.RequestAborted;
+        var safeTitle = SanitizeFileName(entry.Title);
+        var fileName = $"{safeTitle}.nzb";
+
+        var existing = await dbClient.Ctx.HistoryItems.AsNoTracking()
+            .Where(h => h.FileName == fileName && h.DownloadStatus == HistoryItem.DownloadStatusOption.Completed)
+            .OrderByDescending(h => h.CreatedAt)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            var existingVideo = await FindLargestVideoAsync(existing.Id, ct).ConfigureAwait(false);
+            if (existingVideo is not null)
+            {
+                var existingExt = Path.GetExtension(existingVideo.Name).TrimStart('.').ToLowerInvariant();
+                cache.UpdateResolved(nzbToken, existingVideo.Id, existingExt);
+                return BuildRedirect(existingVideo.Id, existingExt);
+            }
+        }
 
         var buffer = new MemoryStream();
         try
@@ -76,10 +94,9 @@ public class ProfilePlayController(
         Guid nzoId;
         try
         {
-            var safeTitle = SanitizeFileName(entry.Title);
             var addFileRequest = new AddFileRequest
             {
-                FileName = $"{safeTitle}.nzb",
+                FileName = fileName,
                 ContentType = "application/x-nzb",
                 NzbFileStream = buffer,
                 Category = configManager.GetManualUploadCategory(),
