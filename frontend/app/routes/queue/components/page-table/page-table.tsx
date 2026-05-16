@@ -1,4 +1,4 @@
-import { Badge, Table } from "react-bootstrap";
+import { Table } from "react-bootstrap";
 import styles from "./page-table.module.css";
 import type { ReactNode } from "react";
 import { TriCheckbox, type TriCheckboxState } from "../tri-checkbox/tri-checkbox";
@@ -95,8 +95,5 @@ export function PageRow(props: PageRowProps) {
 
 export function CategoryBadge({ category }: { category: string }) {
     const categoryLower = category?.toLowerCase();
-    let variant = 'secondary';
-    if (categoryLower === 'movies') variant = 'primary';
-    if (categoryLower === 'tv') variant = 'info';
-    return <Badge bg={variant} style={{ width: '85px' }}>{categoryLower}</Badge>
+    return <div className={styles.categoryBadge}>{categoryLower}</div>
 }

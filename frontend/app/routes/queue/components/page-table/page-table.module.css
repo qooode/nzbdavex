@@ -129,6 +129,24 @@
     gap: 10px;
 }
 
+.categoryBadge {
+    display: inline-block;
+    line-height: 1;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 11px;
+    padding: 5px 10px;
+    color: var(--text-secondary);
+    text-align: center;
+    vertical-align: baseline;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    width: 88px;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    box-sizing: border-box;
+}
+
 .actions {
     display: flex;
     flex-direction: row;
