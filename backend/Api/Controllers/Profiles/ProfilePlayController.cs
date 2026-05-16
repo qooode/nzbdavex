@@ -149,7 +149,7 @@ public class ProfilePlayController(
             .ToListAsync(ct).ConfigureAwait(false);
 
         return files
-            .Where(x => FilenameUtil.IsVideoFile(x.Name))
+            .Where(x => ContentTypeUtil.GetContentType(x.Name).StartsWith("video/", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.FileSize ?? 0)
             .FirstOrDefault();
     }
