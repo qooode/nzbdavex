@@ -166,14 +166,31 @@ public class QueueManager : IDisposable
             CancellationTokenSource = cts
         };
         var debounce = DebounceUtil.CreateDebounce(TimeSpan.FromMilliseconds(200));
+        var providersDebounce = DebounceUtil.CreateDebounce(TimeSpan.FromMilliseconds(500));
         progressHook.ProgressChanged += (_, progress) =>
         {
             inProgressQueueItem.ProgressPercentage = progress;
             var message = $"{queueItem.Id}|{progress}";
             if (progress is 100 or 200) _websocketManager.SendMessage(WebsocketTopic.QueueItemProgress, message);
             else debounce(() => _websocketManager.SendMessage(WebsocketTopic.QueueItemProgress, message));
+            providersDebounce(() => _websocketManager.SendMessage(
+                WebsocketTopic.QueueItemProviders, BuildProvidersMessage(queueItem.Id)));
         };
         return inProgressQueueItem;
+    }
+
+    private string BuildProvidersMessage(Guid queueItemId)
+    {
+        var snapshot = _providerUsageTracker.Snapshot(queueItemId);
+        var configured = _configManager.GetUsenetProviderConfig().Providers
+            .Select(p => p.Host)
+            .Where(h => !string.IsNullOrEmpty(h))
+            .Distinct();
+        var merged = new Dictionary<string, long>(snapshot);
+        foreach (var host in configured)
+            if (!merged.ContainsKey(host)) merged[host] = 0;
+        var payload = string.Join(",", merged.Select(kv => $"{kv.Key}={kv.Value}"));
+        return $"{queueItemId}|{payload}";
     }
 
     private async Task LockAsync(Func<Task> actionAsync)

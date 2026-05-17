@@ -117,22 +117,30 @@ export function IndexerBadge({ indexer }: { indexer: string }) {
     return <div className={styles.indexerBadge} title={`Indexer: ${indexer}`}>via {indexer}</div>
 }
 
+const MAX_INLINE_PROVIDERS = 3;
+
 export function ProvidersBadge({ providers }: { providers: ProviderUsage[] }) {
+    if (providers.length === 0) return null;
     const total = providers.reduce((acc, p) => acc + p.segments, 0);
-    if (total === 0) return null;
-    const top = providers[0];
-    const others = providers.length - 1;
-    const topPct = Math.round((top.segments / total) * 100);
-    const label = others > 0
-        ? `${stripHost(top.host)} ${topPct}% +${others}`
-        : `${stripHost(top.host)} ${topPct}%`;
+    const visible = providers.slice(0, MAX_INLINE_PROVIDERS);
+    const hidden = providers.length - visible.length;
+    const parts = visible.map(p => total > 0
+        ? `${stripHost(p.host)} ${Math.round((p.segments / total) * 100)}%`
+        : stripHost(p.host));
+    const label = hidden > 0 ? `${parts.join(" · ")} +${hidden}` : parts.join(" · ");
     const tooltip = providers
-        .map(p => `${p.host}: ${p.segments} (${Math.round((p.segments / total) * 100)}%)`)
+        .map(p => total > 0
+            ? `${p.host}: ${p.segments} segments (${Math.round((p.segments / total) * 100)}%)`
+            : `${p.host}: idle`)
         .join("\n");
     return <div className={styles.providersBadge} title={tooltip}>📡 {label}</div>;
 }
 
 function stripHost(host: string): string {
     if (!host) return "—";
-    return host.split(".")[0];
+    const labels = host.split(".");
+    // for FQDNs like news.newshosting.com, the second label is usually the
+    // most identifying ("newshosting"); fall back to the first if shorter.
+    if (labels.length >= 2 && labels[1].length >= labels[0].length) return labels[1];
+    return labels[0];
 }

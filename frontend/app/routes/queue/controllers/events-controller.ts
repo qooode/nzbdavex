@@ -8,7 +8,8 @@ export type QueueEvents = {
     onRemovingQueueSlots: (ids: Set<string>, isRemoving: boolean) => void,
     onRemoveQueueSlots: (ids: Set<string>) => void,
     onChangeQueueSlotStatus: (message: string) => void,
-    onChangeQueueSlotPercentage: (message: string) => void
+    onChangeQueueSlotPercentage: (message: string) => void,
+    onChangeQueueSlotProviders: (message: string) => void
 };
 
 export type HistoryEvents = {
@@ -54,13 +55,30 @@ export function useQueueEvents(
         setQueueSlots(slots => slots.map(x => x.nzo_id === nzo_id ? { ...x, true_percentage } : x));
     }, [setQueueSlots]);
 
+    const onChangeQueueSlotProviders = useCallback((message: string) => {
+        const sep = message.indexOf('|');
+        if (sep < 0) return;
+        const nzo_id = message.slice(0, sep);
+        const payload = message.slice(sep + 1);
+        const providers = payload
+            ? payload.split(',').map(part => {
+                const eq = part.indexOf('=');
+                const host = eq < 0 ? part : part.slice(0, eq);
+                const segments = eq < 0 ? 0 : Number(part.slice(eq + 1));
+                return { host, segments: Number.isFinite(segments) ? segments : 0 };
+            }).sort((a, b) => b.segments - a.segments)
+            : [];
+        setQueueSlots(slots => slots.map(x => x.nzo_id === nzo_id ? { ...x, providers } : x));
+    }, [setQueueSlots]);
+
     return memoize({
         onAddQueueSlot,
         onSelectQueueSlots,
         onRemovingQueueSlots,
         onRemoveQueueSlots,
         onChangeQueueSlotStatus,
-        onChangeQueueSlotPercentage
+        onChangeQueueSlotPercentage,
+        onChangeQueueSlotProviders
     });
 }
 

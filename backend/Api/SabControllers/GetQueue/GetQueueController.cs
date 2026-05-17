@@ -30,15 +30,31 @@ public class GetQueueController(
             .Where(x => x.Id != inProgressQueueItem?.Id)
             .ToArray();
 
+        // hosts of every configured Usenet provider — used to show idle providers
+        // alongside active ones for the in-progress download
+        var configuredHosts = configManager.GetUsenetProviderConfig().Providers
+            .Select(p => p.Host)
+            .Where(h => !string.IsNullOrEmpty(h))
+            .Distinct()
+            .ToList();
+
         // get slots
         var slots = queueItems
             .Prepend(request is { Start: 0, Limit: > 0 } ? inProgressQueueItem : null)
             .Where(queueItem => queueItem != null)
             .Select((queueItem, index) =>
             {
-                var percentage = (queueItem == inProgressQueueItem ? progressPercentage : 0)!.Value;
-                var status = queueItem == inProgressQueueItem ? "Downloading" : "Queued";
+                var isInProgress = queueItem == inProgressQueueItem;
+                var percentage = (isInProgress ? progressPercentage : 0)!.Value;
+                var status = isInProgress ? "Downloading" : "Queued";
                 var providerUsage = providerUsageTracker.Snapshot(queueItem!.Id);
+                if (isInProgress && configuredHosts.Count > 0)
+                {
+                    var merged = new Dictionary<string, long>();
+                    foreach (var host in configuredHosts) merged[host] = 0;
+                    foreach (var kv in providerUsage) merged[kv.Key] = kv.Value;
+                    providerUsage = merged;
+                }
                 return GetQueueResponse.QueueSlot.FromQueueItem(queueItem!, index, percentage, status, providerUsage);
             })
             .ToList();

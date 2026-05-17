@@ -5,6 +5,7 @@ import { receiveMessage } from "~/utils/websocket-util";
 const topicNames = {
     queueItemStatus: 'qs',
     queueItemPercentage: 'qp',
+    queueItemProviders: 'qpv',
     queueItemAdded: 'qa',
     queueItemRemoved: 'qr',
     historyItemAdded: 'ha',
@@ -14,6 +15,7 @@ const topicNames = {
 const topicSubscriptions = {
     [topicNames.queueItemStatus]: 'state',
     [topicNames.queueItemPercentage]: 'state',
+    [topicNames.queueItemProviders]: 'state',
     [topicNames.queueItemAdded]: 'event',
     [topicNames.queueItemRemoved]: 'event',
     [topicNames.historyItemAdded]: 'event',
@@ -35,6 +37,8 @@ export function initializeQueueHistoryWebsocket(
             queueEvents.onChangeQueueSlotStatus(message);
         else if (topic == topicNames.queueItemPercentage)
             queueEvents.onChangeQueueSlotPercentage(message);
+        else if (topic == topicNames.queueItemProviders)
+            queueEvents.onChangeQueueSlotProviders(message);
         else if (topic == topicNames.historyItemAdded)
             historyEvents.onAddHistorySlot(JSON.parse(message));
         else if (topic == topicNames.historyItemRemoved)
