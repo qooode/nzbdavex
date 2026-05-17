@@ -66,10 +66,21 @@ public class ProfilePlayController(
         var hedgeDelay = TimeSpan.FromSeconds(configManager.GetPlayHedgeDelaySeconds());
         var maxCandidates = configManager.GetPlayMaxCandidates();
         var verifyMode = configManager.GetPlayVerifyMode();
+        var watchdogEnabled = configManager.IsPlaybackWatchdogEnabled();
 
         using var totalCts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
         totalCts.CancelAfter(totalBudget);
         var deadline = DateTimeOffset.UtcNow + totalBudget;
+
+        // Watchdog OFF → simple single-candidate flow (no auto-fallback, no pre-verify, no negative cache).
+        if (!watchdogEnabled)
+        {
+            var nzbBytes = await FetchNzbBytesAsync(entry.Primary, totalCts.Token).ConfigureAwait(false);
+            if (nzbBytes is null) return StatusCode(502, "Failed to fetch NZB from indexer.");
+            var single = new PreVerifyResult(entry.Primary, nzbBytes, PlaybackFastVerifier.Verdict.Available);
+            var (result, _) = await CommitAsync(nzbToken, single, deadline, totalCts.Token).ConfigureAwait(false);
+            return result ?? StatusCode(504, "Still processing. Retry the link in a few seconds.");
+        }
 
         var pool = entry.Candidates
             .Skip(entry.StartIndex)
@@ -116,19 +127,31 @@ public class ProfilePlayController(
                 if (anyDone == null) break;
                 remaining.Remove(anyDone);
                 var r = await anyDone.ConfigureAwait(false);
-                if (r.Verdict == PlaybackFastVerifier.Verdict.Available)
-                    ready[rankIndex[r.Candidate.NzbUrl]] = r;
-                else
-                    negativeCache.MarkFailed(r.Candidate.NzbUrl);
+                switch (r.Verdict)
+                {
+                    case PlaybackFastVerifier.Verdict.Available:
+                        ready[rankIndex[r.Candidate.NzbUrl]] = r;
+                        break;
+                    case PlaybackFastVerifier.Verdict.Dead:
+                        negativeCache.MarkFailed(r.Candidate.NzbUrl);
+                        break;
+                    case PlaybackFastVerifier.Verdict.Timeout:
+                        // Don't poison on timeout — provider was just slow.
+                        // Try it anyway as a last resort if we run out of candidates.
+                        ready[rankIndex[r.Candidate.NzbUrl] + 10000] = r;
+                        break;
+                }
             }
 
             if (ready.Count > 0)
             {
                 var best = ready.Values[0];
                 ready.RemoveAt(0);
-                var committed = await CommitAsync(nzbToken, best, deadline, totalCts.Token).ConfigureAwait(false);
-                if (committed is not null) return committed;
-                negativeCache.MarkFailed(best.Candidate.NzbUrl);
+                var (action, reason) = await CommitAsync(nzbToken, best, deadline, totalCts.Token).ConfigureAwait(false);
+                if (action is not null) return action;
+                if (reason == CommitReason.QueueFailed || reason == CommitReason.EnqueueFailed)
+                    negativeCache.MarkFailed(best.Candidate.NzbUrl);
+                if (reason == CommitReason.Cancelled) return new EmptyResult();
                 continue;
             }
 
@@ -137,7 +160,18 @@ public class ProfilePlayController(
             await Task.WhenAny(remaining).ConfigureAwait(false);
         }
 
-        return StatusCode(504, "No candidate completed within the configured budget.");
+        // 504 with a hint: the queue item we enqueued may still be processing.
+        // A retry from the player will pick it up via TryResolveExistingAsync.
+        return StatusCode(504, "Still processing. Retry the link in a few seconds.");
+    }
+
+    private enum CommitReason
+    {
+        Completed,
+        QueueFailed,
+        EnqueueFailed,
+        BudgetTimeout,
+        Cancelled,
     }
 
     private async Task<PreVerifyResult> PreVerifyAsync(
@@ -183,7 +217,7 @@ public class ProfilePlayController(
         }
     }
 
-    private async Task<IActionResult?> CommitAsync(
+    private async Task<(IActionResult? Result, CommitReason Reason)> CommitAsync(
         string nzbToken,
         PreVerifyResult preVerify,
         DateTimeOffset deadline,
@@ -196,59 +230,85 @@ public class ProfilePlayController(
 
         var category = configManager.GetManualUploadCategory();
 
+        // If a previous click already enqueued this NZB and is still processing,
+        // skip the duplicate enqueue and just poll on the existing item.
         Guid nzoId;
         try
         {
-            using var buffer = new MemoryStream(nzbBytes, writable: false);
-            var addFileRequest = new AddFileRequest
+            var existingQueue = await dbClient.Ctx.QueueItems.AsNoTracking()
+                .Where(q => q.FileName == fileName && q.Category == category)
+                .OrderByDescending(q => q.CreatedAt)
+                .Select(q => (Guid?)q.Id)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+            if (existingQueue.HasValue)
             {
-                FileName = fileName,
-                ContentType = "application/x-nzb",
-                NzbFileStream = buffer,
-                Category = category,
-                Priority = QueueItem.PriorityOption.Force,
-                PostProcessing = QueueItem.PostProcessingOption.None,
-                CancellationToken = ct,
-            };
-            var addFileController = new AddFileController(HttpContext, dbClient, queueManager, configManager, websocketManager);
-            var addResponse = await addFileController.AddFileAsync(addFileRequest).ConfigureAwait(false);
-            if (addResponse.NzoIds.Count == 0) return null;
-            nzoId = Guid.Parse(addResponse.NzoIds[0]);
+                nzoId = existingQueue.Value;
+            }
+            else
+            {
+                using var buffer = new MemoryStream(nzbBytes, writable: false);
+                var addFileRequest = new AddFileRequest
+                {
+                    FileName = fileName,
+                    ContentType = "application/x-nzb",
+                    NzbFileStream = buffer,
+                    Category = category,
+                    Priority = QueueItem.PriorityOption.Force,
+                    PostProcessing = QueueItem.PostProcessingOption.None,
+                    CancellationToken = ct,
+                };
+                var addFileController = new AddFileController(HttpContext, dbClient, queueManager, configManager, websocketManager);
+                var addResponse = await addFileController.AddFileAsync(addFileRequest).ConfigureAwait(false);
+                if (addResponse.NzoIds.Count == 0) return (null, CommitReason.EnqueueFailed);
+                nzoId = Guid.Parse(addResponse.NzoIds[0]);
+            }
         }
-        catch (Exception e) when (!e.IsCancellationException())
+        catch (OperationCanceledException)
+        {
+            return (null, CommitReason.Cancelled);
+        }
+        catch (Exception e)
         {
             Log.Debug(e, "Enqueue failed for {Url}", c.NzbUrl);
-            return null;
+            return (null, CommitReason.EnqueueFailed);
         }
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (ct.IsCancellationRequested) return null;
+            if (ct.IsCancellationRequested) return (null, CommitReason.Cancelled);
 
-            var history = await dbClient.Ctx.HistoryItems.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == nzoId, ct).ConfigureAwait(false);
+            HistoryItem? history;
+            try
+            {
+                history = await dbClient.Ctx.HistoryItems.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == nzoId, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { return (null, CommitReason.Cancelled); }
 
             if (history is not null)
             {
                 if (history.DownloadStatus != HistoryItem.DownloadStatusOption.Completed)
                 {
                     Log.Debug("Candidate {Url} processing failed: {Msg}", c.NzbUrl, history.FailMessage);
-                    return null;
+                    return (null, CommitReason.QueueFailed);
                 }
 
                 var video = await FindLargestVideoAsync(nzoId, ct).ConfigureAwait(false);
-                if (video is null) return null;
+                if (video is null) return (null, CommitReason.QueueFailed);
 
                 var ext = Path.GetExtension(video.Name).TrimStart('.').ToLowerInvariant();
                 cache.UpdateResolved(nzbToken, video.Id, ext);
-                return BuildRedirect(video.Id, ext);
+                return (BuildRedirect(video.Id, ext), CommitReason.Completed);
             }
 
             try { await Task.Delay(PollInterval, ct).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return null; }
+            catch (OperationCanceledException) { return (null, CommitReason.Cancelled); }
         }
 
-        return null;
+        // Budget exhausted — but the queue item we enqueued keeps processing.
+        // A re-click from the player will find it via TryResolveExistingAsync next time.
+        return (null, CommitReason.BudgetTimeout);
     }
 
     private async Task<IActionResult?> TryResolveExistingAsync(string title, string nzbToken, CancellationToken ct)

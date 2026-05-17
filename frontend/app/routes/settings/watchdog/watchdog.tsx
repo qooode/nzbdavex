@@ -9,7 +9,8 @@ type WatchdogSettingsProps = {
 
 export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps) {
     const set = (key: string, value: string) => setNewConfig({ ...config, [key]: value });
-    const verifyMode = config["play.verify-mode"] ?? "stat";
+    const verifyMode = config["play.verify-mode"] ?? "none";
+    const enabled = (config["play.watchdog-enabled"] ?? "true") === "true";
 
     return (
         <div className={styles.container}>
@@ -23,17 +24,31 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
             </div>
 
             <Form.Group className={styles.section}>
+                <Form.Check
+                    type="switch"
+                    id="play-watchdog-enabled"
+                    label="Enable playback watchdog"
+                    checked={enabled}
+                    onChange={e => set("play.watchdog-enabled", String(e.target.checked))} />
+                <p className={styles.hint}>
+                    When off, a Play click just processes the single chosen release (legacy behavior).
+                    When on, the watchdog tries alternative releases on failure and dedupes in-flight queue items.
+                </p>
+            </Form.Group>
+
+            <Form.Group className={styles.section}>
                 <Form.Label>Total budget (seconds)</Form.Label>
                 <Form.Control
                     className={styles.input}
                     type="number"
                     min={3}
-                    max={60}
-                    value={config["play.total-budget-seconds"] ?? "10"}
+                    max={180}
+                    value={config["play.total-budget-seconds"] ?? "30"}
                     onChange={e => set("play.total-budget-seconds", e.target.value)} />
                 <p className={styles.hint}>
-                    Hard ceiling for a Play click. If nothing works in this many seconds, the player gets
-                    an error and moves on. Default 10.
+                    Hard ceiling for a Play click. Big UHD releases need ~15–30s for the queue to extract
+                    file metadata. If exceeded, the player gets a retry-able error; the queue item keeps
+                    processing in the background and a re-click resolves it. Default 30.
                 </p>
             </Form.Group>
 
@@ -44,6 +59,7 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     type="number"
                     min={1}
                     max={30}
+                    disabled={!enabled}
                     value={config["play.hedge-delay-seconds"] ?? "3"}
                     onChange={e => set("play.hedge-delay-seconds", e.target.value)} />
                 <p className={styles.hint}>
@@ -59,6 +75,7 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     type="number"
                     min={1}
                     max={10}
+                    disabled={!enabled}
                     value={config["play.max-candidates"] ?? "3"}
                     onChange={e => set("play.max-candidates", e.target.value)} />
                 <p className={styles.hint}>
@@ -70,14 +87,16 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                 <Form.Label>Verify mode</Form.Label>
                 <Form.Select
                     className={styles.input}
+                    disabled={!enabled}
                     value={verifyMode}
                     onChange={e => set("play.verify-mode", e.target.value)}>
-                    <option value="stat">stat — fast (~0.2s per candidate)</option>
-                    <option value="body">body — strict, downloads first article (~1-2s)</option>
-                    <option value="none">none — skip verify, fastest but no pre-filtering</option>
+                    <option value="none">none — no pre-check, enqueue right away (recommended)</option>
+                    <option value="stat">stat — STAT first segment (~0.2s; skips candidates flagged dead)</option>
+                    <option value="body">body — strict, downloads first article (~1–2s)</option>
                 </Form.Select>
                 <p className={styles.hint}>
-                    How candidates are pre-checked before committing. `stat` is recommended; `body` is stricter at the cost of ~1s per candidate.
+                    `none` is safest: every candidate gets enqueued and falls back to the next on confirmed
+                    failure. `stat` adds a pre-filter but can drop legit releases when providers are slow.
                 </p>
             </Form.Group>
 
@@ -88,6 +107,7 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     type="number"
                     min={1}
                     max={1440}
+                    disabled={!enabled}
                     value={config["play.candidate-negative-cache-minutes"] ?? "5"}
                     onChange={e => set("play.candidate-negative-cache-minutes", e.target.value)} />
                 <p className={styles.hint}>
@@ -100,7 +120,8 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
 }
 
 export function isWatchdogSettingsUpdated(config: Record<string, string>, newConfig: Record<string, string>) {
-    return config["play.total-budget-seconds"] !== newConfig["play.total-budget-seconds"]
+    return config["play.watchdog-enabled"] !== newConfig["play.watchdog-enabled"]
+        || config["play.total-budget-seconds"] !== newConfig["play.total-budget-seconds"]
         || config["play.hedge-delay-seconds"] !== newConfig["play.hedge-delay-seconds"]
         || config["play.max-candidates"] !== newConfig["play.max-candidates"]
         || config["play.verify-mode"] !== newConfig["play.verify-mode"]

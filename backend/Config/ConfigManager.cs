@@ -171,11 +171,17 @@ public class ConfigManager
             .ToHashSet();
     }
 
+    public bool IsPlaybackWatchdogEnabled()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("play.watchdog-enabled"));
+        return v == null || bool.Parse(v);
+    }
+
     public int GetPlayTotalBudgetSeconds()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("play.total-budget-seconds"));
-        if (v == null) return 10;
-        return int.TryParse(v, out var n) ? Math.Clamp(n, 3, 60) : 10;
+        if (v == null) return 30;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 3, 180) : 30;
     }
 
     public int GetPlayHedgeDelaySeconds()
@@ -197,9 +203,9 @@ public class ConfigManager
         var v = StringUtil.EmptyToNull(GetConfigValue("play.verify-mode"));
         return v switch
         {
+            "stat" => "stat",
             "body" => "body",
-            "none" => "none",
-            _ => "stat",
+            _ => "none",
         };
     }
 
