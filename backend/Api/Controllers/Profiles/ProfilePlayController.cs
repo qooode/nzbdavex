@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NzbWebDAV.Api.Controllers.GetWebdavItem;
@@ -30,6 +31,11 @@ public class ProfilePlayController(
 {
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+
+    // Tracks the last time a Play click touched a watchdog-created queue item.
+    // Used by ScheduleOrphanCleanup to remove items the player has stopped polling.
+    private static readonly ConcurrentDictionary<Guid, DateTimeOffset> _playLastSeen = new();
+    private static readonly TimeSpan OrphanIdleThreshold = TimeSpan.FromMinutes(5);
 
     [HttpGet]
     public async Task<IActionResult> Get(string token, string nzbToken)
@@ -90,9 +96,11 @@ public class ProfilePlayController(
                 return StatusCode(502, "Failed to fetch NZB from indexer.");
             }
             var single = new PreVerifyResult(entry.Primary, nzbBytes, PlaybackFastVerifier.Verdict.Available);
-            var (result, reason) = await CommitAsync(nzbToken, single, deadline, totalCts.Token).ConfigureAwait(false);
+            var (result, reason, newNzoId) = await CommitAsync(nzbToken, single, deadline, totalCts.Token).ConfigureAwait(false);
             RecordAttempt(clickId, entry.Primary, contentType, requestedTitle, 0,
                 MapCommitReason(reason), CommitReasonToMessage(reason), startsAt, isWinner: reason == CommitReason.Completed);
+            if (reason == CommitReason.BudgetTimeout && newNzoId.HasValue)
+                ScheduleOrphanCleanup(newNzoId.Value);
             return result ?? StatusCode(504, "Still processing. Retry the link in a few seconds.");
         }
 
@@ -170,15 +178,39 @@ public class ProfilePlayController(
             {
                 var best = ready.Values[0];
                 ready.RemoveAt(0);
-                var (action, reason) = await CommitAsync(nzbToken, best, deadline, totalCts.Token).ConfigureAwait(false);
+                var (action, reason, newNzoId) = await CommitAsync(nzbToken, best, deadline, totalCts.Token).ConfigureAwait(false);
                 RecordAttempt(clickId, best.Candidate, contentType, requestedTitle,
                     rankIndex[best.Candidate.NzbUrl],
                     MapCommitReason(reason), CommitReasonToMessage(reason), startsAt,
                     isWinner: reason == CommitReason.Completed);
-                if (action is not null) return action;
+                if (action is not null)
+                {
+                    // Winner found. Cancel in-flight losers so they stop holding
+                    // indexer/NNTP connections, and log them in /watchdog as Cancelled.
+                    CancelRemainingAndRecord(clickId, contentType, requestedTitle,
+                        rankIndex, startsAt, remaining, ready, totalCts,
+                        "Winner found; loser cancelled to free provider connections");
+                    return action;
+                }
                 if (reason == CommitReason.QueueFailed || reason == CommitReason.EnqueueFailed)
                     negativeCache.MarkFailed(best.Candidate.NzbUrl);
-                if (reason == CommitReason.Cancelled) return new EmptyResult();
+                if (reason == CommitReason.Cancelled)
+                {
+                    CancelRemainingAndRecord(clickId, contentType, requestedTitle,
+                        rankIndex, startsAt, remaining, ready, totalCts,
+                        "Client disconnected; loser cancelled");
+                    return new EmptyResult();
+                }
+                if (reason == CommitReason.BudgetTimeout)
+                {
+                    // The queue item is still processing. Schedule cleanup so we
+                    // don't keep downloading a UHD release that the player gave up on.
+                    if (newNzoId.HasValue) ScheduleOrphanCleanup(newNzoId.Value);
+                    CancelRemainingAndRecord(clickId, contentType, requestedTitle,
+                        rankIndex, startsAt, remaining, ready, totalCts,
+                        "Budget exhausted; loser cancelled");
+                    return StatusCode(504, "Still processing. Retry the link in a few seconds.");
+                }
                 continue;
             }
 
@@ -187,9 +219,113 @@ public class ProfilePlayController(
             await Task.WhenAny(remaining).ConfigureAwait(false);
         }
 
-        // 504 with a hint: the queue item we enqueued may still be processing.
-        // A retry from the player will pick it up via TryResolveExistingAsync.
+        // No candidate won and we're out of options (all dead, or budget elapsed).
+        // Cancel anything still in flight so it stops burning provider connections.
+        CancelRemainingAndRecord(clickId, contentType, requestedTitle,
+            rankIndex, startsAt, remaining, ready, totalCts,
+            "No candidate succeeded; remaining cancelled");
         return StatusCode(504, "Still processing. Retry the link in a few seconds.");
+    }
+
+    // Signal in-flight pre-verify tasks to abort (freeing indexer/NNTP connections),
+    // and record both pre-verified-but-unused candidates and in-flight ones as Cancelled
+    // so they show up in /watchdog instead of vanishing silently.
+    private void CancelRemainingAndRecord(
+        Guid clickId,
+        string contentType,
+        string requestedTitle,
+        Dictionary<string, int> rankIndex,
+        Dictionary<string, DateTimeOffset> startsAt,
+        List<Task<PreVerifyResult>> remaining,
+        SortedList<int, PreVerifyResult> ready,
+        CancellationTokenSource totalCts,
+        string reason)
+    {
+        if (!totalCts.IsCancellationRequested)
+        {
+            try { totalCts.Cancel(); }
+            catch (ObjectDisposedException) { /* race with using disposal — already done */ }
+        }
+
+        // Already-verified but unused — no connections to release, just visibility.
+        foreach (var r in ready.Values)
+        {
+            RecordAttempt(clickId, r.Candidate, contentType, requestedTitle,
+                rankIndex[r.Candidate.NzbUrl],
+                PlaybackAttemptLog.Outcome.Cancelled, reason, startsAt, isWinner: false);
+        }
+
+        // Still in flight — record their cancellation in the background once they observe it.
+        // Don't await synchronously; the response should return immediately.
+        if (remaining.Count == 0) return;
+        var pending = remaining.ToList();
+        var localStarts = new Dictionary<string, DateTimeOffset>(startsAt);
+        var localRanks = new Dictionary<string, int>(rankIndex);
+        _ = Task.Run(async () =>
+        {
+            foreach (var t in pending)
+            {
+                try
+                {
+                    var r = await t.ConfigureAwait(false);
+                    RecordAttempt(clickId, r.Candidate, contentType, requestedTitle,
+                        localRanks[r.Candidate.NzbUrl],
+                        PlaybackAttemptLog.Outcome.Cancelled, reason, localStarts, isWinner: false);
+                }
+                catch
+                {
+                    // Task didn't produce a result we can identify — skip silently.
+                }
+            }
+        });
+    }
+
+    // After a BudgetTimeout the queue item keeps processing in case the player re-clicks.
+    // If no click touches it for OrphanIdleThreshold, remove it so we don't burn provider
+    // bandwidth downloading a release the player has clearly given up on.
+    private void ScheduleOrphanCleanup(Guid nzoId)
+    {
+        var manager = queueManager;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(OrphanIdleThreshold).ConfigureAwait(false);
+
+                if (!_playLastSeen.TryGetValue(nzoId, out var lastSeen))
+                    return; // already cleaned up (success path / earlier cleanup)
+
+                var idle = DateTimeOffset.UtcNow - lastSeen;
+                if (idle < OrphanIdleThreshold)
+                {
+                    // Re-clicked recently — keep the item, check again later.
+                    ScheduleOrphanCleanup(nzoId);
+                    return;
+                }
+
+                await using var ctx = new DavDatabaseContext();
+                var freshDbClient = new DavDatabaseClient(ctx);
+                var stillPending = await ctx.QueueItems.AsNoTracking()
+                    .AnyAsync(q => q.Id == nzoId).ConfigureAwait(false);
+                if (!stillPending)
+                {
+                    _playLastSeen.TryRemove(nzoId, out _);
+                    return;
+                }
+
+                Log.Information(
+                    "Removing orphan play-driven queue item {NzoId} after {IdleSeconds}s with no re-click",
+                    nzoId, (int)idle.TotalSeconds);
+                await manager.RemoveQueueItemsAsync(new List<Guid> { nzoId }, freshDbClient, CancellationToken.None)
+                    .ConfigureAwait(false);
+                _playLastSeen.TryRemove(nzoId, out _);
+            }
+            catch (Exception e)
+            {
+                Log.Debug(e, "Orphan cleanup for {NzoId} failed", nzoId);
+                _playLastSeen.TryRemove(nzoId, out _);
+            }
+        });
     }
 
     private void RecordAttempt(
@@ -293,7 +429,7 @@ public class ProfilePlayController(
         }
     }
 
-    private async Task<(IActionResult? Result, CommitReason Reason)> CommitAsync(
+    private async Task<(IActionResult? Result, CommitReason Reason, Guid? NewlyEnqueuedNzoId)> CommitAsync(
         string nzbToken,
         PreVerifyResult preVerify,
         DateTimeOffset deadline,
@@ -309,6 +445,7 @@ public class ProfilePlayController(
         // If a previous click already enqueued this NZB and is still processing,
         // skip the duplicate enqueue and just poll on the existing item.
         Guid nzoId;
+        Guid? newlyEnqueuedNzoId = null;
         try
         {
             var existingQueue = await dbClient.Ctx.QueueItems.AsNoTracking()
@@ -337,23 +474,31 @@ public class ProfilePlayController(
                 };
                 var addFileController = new AddFileController(HttpContext, dbClient, queueManager, configManager, websocketManager);
                 var addResponse = await addFileController.AddFileAsync(addFileRequest).ConfigureAwait(false);
-                if (addResponse.NzoIds.Count == 0) return (null, CommitReason.EnqueueFailed);
+                if (addResponse.NzoIds.Count == 0) return (null, CommitReason.EnqueueFailed, null);
                 nzoId = Guid.Parse(addResponse.NzoIds[0]);
+                newlyEnqueuedNzoId = nzoId;
+                // Mark this queue item as play-owned so orphan cleanup can identify it.
+                _playLastSeen[nzoId] = DateTimeOffset.UtcNow;
             }
         }
         catch (OperationCanceledException)
         {
-            return (null, CommitReason.Cancelled);
+            return (null, CommitReason.Cancelled, null);
         }
         catch (Exception e)
         {
             Log.Debug(e, "Enqueue failed for {Url}", c.NzbUrl);
-            return (null, CommitReason.EnqueueFailed);
+            return (null, CommitReason.EnqueueFailed, null);
         }
+
+        // If this click joined an existing play-owned queue item, refresh its
+        // last-seen timestamp so orphan cleanup waits for our polling to finish.
+        if (newlyEnqueuedNzoId is null && _playLastSeen.ContainsKey(nzoId))
+            _playLastSeen[nzoId] = DateTimeOffset.UtcNow;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (ct.IsCancellationRequested) return (null, CommitReason.Cancelled);
+            if (ct.IsCancellationRequested) return (null, CommitReason.Cancelled, newlyEnqueuedNzoId);
 
             HistoryItem? history;
             try
@@ -361,31 +506,36 @@ public class ProfilePlayController(
                 history = await dbClient.Ctx.HistoryItems.AsNoTracking()
                     .FirstOrDefaultAsync(x => x.Id == nzoId, ct).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { return (null, CommitReason.Cancelled); }
+            catch (OperationCanceledException) { return (null, CommitReason.Cancelled, newlyEnqueuedNzoId); }
 
             if (history is not null)
             {
+                _playLastSeen.TryRemove(nzoId, out _);
                 if (history.DownloadStatus != HistoryItem.DownloadStatusOption.Completed)
                 {
                     Log.Debug("Candidate {Url} processing failed: {Msg}", c.NzbUrl, history.FailMessage);
-                    return (null, CommitReason.QueueFailed);
+                    return (null, CommitReason.QueueFailed, newlyEnqueuedNzoId);
                 }
 
                 var video = await FindLargestVideoAsync(nzoId, ct).ConfigureAwait(false);
-                if (video is null) return (null, CommitReason.QueueFailed);
+                if (video is null) return (null, CommitReason.QueueFailed, newlyEnqueuedNzoId);
 
                 var ext = Path.GetExtension(video.Name).TrimStart('.').ToLowerInvariant();
                 cache.UpdateResolved(nzbToken, video.Id, ext);
-                return (BuildRedirect(video.Id, ext), CommitReason.Completed);
+                return (BuildRedirect(video.Id, ext), CommitReason.Completed, newlyEnqueuedNzoId);
             }
 
+            // Refresh while actively polling so cleanup doesn't kill an item we're waiting on.
+            if (_playLastSeen.ContainsKey(nzoId))
+                _playLastSeen[nzoId] = DateTimeOffset.UtcNow;
+
             try { await Task.Delay(PollInterval, ct).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return (null, CommitReason.Cancelled); }
+            catch (OperationCanceledException) { return (null, CommitReason.Cancelled, newlyEnqueuedNzoId); }
         }
 
-        // Budget exhausted — but the queue item we enqueued keeps processing.
-        // A re-click from the player will find it via TryResolveExistingAsync next time.
-        return (null, CommitReason.BudgetTimeout);
+        // Budget exhausted — caller is expected to schedule orphan cleanup so the
+        // queue item doesn't keep downloading a release the player gave up on.
+        return (null, CommitReason.BudgetTimeout, newlyEnqueuedNzoId);
     }
 
     private async Task<IActionResult?> TryResolveExistingAsync(string title, string nzbToken, CancellationToken ct)
