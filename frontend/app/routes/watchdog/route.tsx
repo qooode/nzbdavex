@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/route";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Form } from "react-bootstrap";
 import styles from "./route.module.css";
 import { backendClient, type PlaybackAttempt, type PlaybackAttemptOutcome } from "~/clients/backend-client.server";
@@ -29,7 +29,6 @@ export default function Watchdog({ loaderData }: Route.ComponentProps) {
     const [hiddenBefore, setHiddenBefore] = useState<number>(0);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const lastRefreshRef = useRef<number>(Date.now());
 
     const refresh = useCallback(async () => {
         setRefreshing(true);
@@ -39,7 +38,6 @@ export default function Watchdog({ loaderData }: Route.ComponentProps) {
             const data = await r.json();
             setAttempts(data.attempts ?? []);
             setError(null);
-            lastRefreshRef.current = Date.now();
         } catch (e: any) {
             setError(e?.message ?? String(e));
         } finally {
@@ -66,31 +64,27 @@ export default function Watchdog({ loaderData }: Route.ComponentProps) {
 
     const groups = useMemo(() => groupByClick(attempts, hiddenBefore), [attempts, hiddenBefore]);
     const filteredGroups = useMemo(() => groups.filter(g => matchesFilter(g, filter)), [groups, filter]);
-
     const stats = useMemo(() => computeStats(groups), [groups]);
 
     return (
-        <div className={styles.container}>
-            <div className={styles.header}>
-                <div className={styles.titleRow}>
-                    <div className={styles.titleBlock}>
-                        <h1 className={styles.title}>
-                            <span className={`${styles.dot} ${autoRefresh ? styles.dotLive : ""}`} />
-                            Watchdog
-                        </h1>
+        <div className={styles.page}>
+            <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                    <div>
+                        <h2 className={styles.title}>Watchdog</h2>
                         <div className={styles.subtitle}>
-                            Live view of every release the playback watchdog tried. Held in memory; cleared on app restart.
+                            Live playback resolution log. Held in memory; cleared on app restart.
                         </div>
                     </div>
                     <div className={styles.controls}>
                         <Form.Check
                             type="switch"
                             id="watchdog-autorefresh"
-                            label="Auto-refresh"
+                            label={refreshing ? "Refreshing…" : "Live"}
                             checked={autoRefresh}
                             onChange={e => setAutoRefresh(e.target.checked)} />
-                        <Button variant="secondary" size="sm" onClick={refresh} disabled={refreshing}>
-                            {refreshing ? "Refreshing…" : "Refresh"}
+                        <Button variant="outline-secondary" size="sm" onClick={refresh} disabled={refreshing}>
+                            Refresh
                         </Button>
                         <Button
                             variant="outline-secondary"
@@ -103,18 +97,18 @@ export default function Watchdog({ loaderData }: Route.ComponentProps) {
                     </div>
                 </div>
 
-                <div className={styles.statsRow}>
+                <div className={styles.statsBar}>
                     <Stat label="Clicks" value={stats.total} />
                     <Stat label="Resolved" value={stats.resolved} tone="ok" />
                     <Stat label="Failed" value={stats.failed} tone="bad" />
                     <Stat label="In flight" value={stats.inFlight} tone="warn" />
                 </div>
 
-                <div className={styles.filterRow}>
-                    <FilterChip active={filter === "all"} onClick={() => setFilter("all")}>All ({groups.length})</FilterChip>
-                    <FilterChip active={filter === "live"} onClick={() => setFilter("live")}>Live ({stats.inFlight})</FilterChip>
-                    <FilterChip active={filter === "resolved"} onClick={() => setFilter("resolved")}>Resolved ({stats.resolved})</FilterChip>
-                    <FilterChip active={filter === "failed"} onClick={() => setFilter("failed")}>Failed ({stats.failed})</FilterChip>
+                <div className={styles.filterBar}>
+                    <FilterChip active={filter === "all"} onClick={() => setFilter("all")} count={groups.length}>All</FilterChip>
+                    <FilterChip active={filter === "live"} onClick={() => setFilter("live")} count={stats.inFlight}>Live</FilterChip>
+                    <FilterChip active={filter === "resolved"} onClick={() => setFilter("resolved")} count={stats.resolved}>Resolved</FilterChip>
+                    <FilterChip active={filter === "failed"} onClick={() => setFilter("failed")} count={stats.failed}>Failed</FilterChip>
                 </div>
 
                 {error && <div className={styles.errorBox}>Could not load: {error}</div>}
@@ -136,35 +130,39 @@ export default function Watchdog({ loaderData }: Route.ComponentProps) {
 }
 
 function ClickCard({ group }: { group: ClickGroup }) {
-    const status = group.hasWinner ? "win" : group.allResolved ? "loss" : "inflight";
-    const fastest = group.attempts.find(a => a.isWinner);
+    const status: "win" | "loss" | "inflight" =
+        group.hasWinner ? "win" : group.allResolved ? "loss" : "inflight";
+    const winner = group.attempts.find(a => a.isWinner);
 
     return (
-        <div className={`${styles.clickCard} ${styles[`clickCard_${status}`]}`}>
+        <div className={styles.clickCard}>
             <div className={styles.clickHeader}>
-                <div className={styles.clickHeaderLeft}>
-                    <span className={`${styles.statusPill} ${styles[`statusPill_${status}`]}`}>
-                        {status === "win" ? "✓ Resolved" : status === "loss" ? "✗ Failed" : "● Live"}
-                    </span>
-                    <span className={styles.clickTitle} title={group.requestedTitle}>{group.requestedTitle}</span>
+                <div className={styles.clickHeaderMain}>
+                    <StatusPill status={status} />
+                    <div className={styles.clickTitle} title={group.requestedTitle}>{group.requestedTitle}</div>
                 </div>
-                <div className={styles.clickHeaderRight}>
-                    <span className={styles.metaPill}>{group.contentType}</span>
-                    <span className={styles.metaPill}>{group.attempts.length} attempt{group.attempts.length === 1 ? "" : "s"}</span>
+                <div className={styles.clickHeaderMeta}>
+                    <span className={styles.metaBadge}>{group.contentType}</span>
+                    <span className={styles.metaBadge}>{group.attempts.length} attempt{group.attempts.length === 1 ? "" : "s"}</span>
                     <span className={styles.timestamp} title={new Date(group.firstAt * 1000).toLocaleString()}>
                         {formatAge(group.firstAt)}
                     </span>
                 </div>
             </div>
 
-            {fastest && (
-                <div className={styles.winnerSummary}>
-                    Resolved by <strong>{fastest.indexerName}</strong> in <strong>{fastest.durationMs}ms</strong>
-                    {fastest.size > 0 && <> · {formatBytes(fastest.size)}</>}
+            {winner && (
+                <div className={styles.winnerLine}>
+                    Resolved via <span className={styles.winnerIndexer}>{winner.indexerName}</span>
+                    <span className={styles.winnerDot}>·</span>
+                    <span className={styles.winnerDuration}>{winner.durationMs}ms</span>
+                    {winner.size > 0 && <>
+                        <span className={styles.winnerDot}>·</span>
+                        <span>{formatBytes(winner.size)}</span>
+                    </>}
                 </div>
             )}
 
-            <div className={styles.attemptsWrap}>
+            <div className={styles.attemptTableWrap}>
                 <table className={styles.attemptTable}>
                     <thead>
                         <tr>
@@ -199,18 +197,16 @@ function ClickCard({ group }: { group: ClickGroup }) {
                         <div key={i} className={`${styles.attemptCard} ${a.isWinner ? styles.attemptCardWinner : ""}`}>
                             <div className={styles.attemptCardTop}>
                                 <span className={styles.attemptRank}>#{a.rankIndex + 1}</span>
-                                <span className={styles.attemptIndexer}>{a.indexerName || "—"}</span>
+                                <span className={styles.attemptIndexer} title={a.indexerName}>{a.indexerName || "—"}</span>
                                 <OutcomeBadge outcome={a.outcome} winner={a.isWinner} />
                             </div>
                             <div className={styles.attemptCardTitle} title={a.candidateTitle}>{a.candidateTitle || "—"}</div>
                             <div className={styles.attemptCardMeta}>
                                 <span>{formatBytes(a.size)}</span>
-                                <span>·</span>
+                                <span className={styles.attemptCardMetaDot}>·</span>
                                 <span>{a.durationMs}ms</span>
                             </div>
-                            {a.failReason && (
-                                <div className={styles.attemptCardReason}>{a.failReason}</div>
-                            )}
+                            {a.failReason && <div className={styles.attemptCardReason}>{a.failReason}</div>}
                         </div>
                     ))}
                 </div>
@@ -220,7 +216,10 @@ function ClickCard({ group }: { group: ClickGroup }) {
 }
 
 function Stat({ label, value, tone }: { label: string, value: number, tone?: "ok" | "bad" | "warn" }) {
-    const toneClass = tone === "ok" ? styles.statOk : tone === "bad" ? styles.statBad : tone === "warn" ? styles.statWarn : "";
+    const toneClass = tone === "ok" ? styles.statValueOk
+        : tone === "bad" ? styles.statValueBad
+        : tone === "warn" ? styles.statValueWarn
+        : "";
     return (
         <div className={styles.stat}>
             <div className={`${styles.statValue} ${toneClass}`}>{value}</div>
@@ -229,26 +228,46 @@ function Stat({ label, value, tone }: { label: string, value: number, tone?: "ok
     );
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean, onClick: () => void, children: React.ReactNode }) {
+function FilterChip({ active, onClick, count, children }: { active: boolean, onClick: () => void, count: number, children: React.ReactNode }) {
     return (
         <button
             type="button"
             className={`${styles.filterChip} ${active ? styles.filterChipActive : ""}`}
             onClick={onClick}>
-            {children}
+            <span>{children}</span>
+            <span className={styles.filterChipCount}>{count}</span>
         </button>
     );
 }
 
+function StatusPill({ status }: { status: "win" | "loss" | "inflight" }) {
+    const label = status === "win" ? "Resolved" : status === "loss" ? "Failed" : "Live";
+    const cls = status === "win" ? styles.pillOk
+        : status === "loss" ? styles.pillBad
+        : styles.pillLive;
+    return <span className={`${styles.statusPill} ${cls}`}>{label}</span>;
+}
+
 function OutcomeBadge({ outcome, winner }: { outcome: PlaybackAttemptOutcome, winner: boolean }) {
     if (winner) return <span className={`${styles.outcomeBadge} ${styles.outcomeWin}`}>winner</span>;
-    const cls =
-        outcome === "QueueCompleted" ? styles.outcomeOk
-        : outcome === "PreVerifyAvailable" ? styles.outcomeOk
-        : outcome === "BudgetTimeout" ? styles.outcomeWarn
-        : outcome === "Cancelled" ? styles.outcomeWarn
+    const tone = outcomeToTone(outcome);
+    const cls = tone === "ok" ? styles.outcomeOk
+        : tone === "warn" ? styles.outcomeWarn
         : styles.outcomeBad;
     return <span className={`${styles.outcomeBadge} ${cls}`}>{shortOutcome(outcome)}</span>;
+}
+
+function outcomeToTone(o: PlaybackAttemptOutcome): "ok" | "warn" | "bad" {
+    switch (o) {
+        case "QueueCompleted":
+        case "PreVerifyAvailable":
+            return "ok";
+        case "BudgetTimeout":
+        case "Cancelled":
+            return "warn";
+        default:
+            return "bad";
+    }
 }
 
 function shortOutcome(o: PlaybackAttemptOutcome): string {
