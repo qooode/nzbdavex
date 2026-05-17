@@ -1,0 +1,33 @@
+.container {
+    max-width: 560px;
+}
+
+.section {
+    margin-bottom: 24px;
+}
+
+.sectionTitle {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.sectionDescription {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 14px;
+}
+
+.input {
+    margin-bottom: 4px;
+}
+
+.input::placeholder {
+    color: var(--text-faint);
+}
+
+.hint {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 4px;
+    margin-bottom: 0;
+}

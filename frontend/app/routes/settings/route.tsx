@@ -10,6 +10,7 @@ import { isIndexersSettingsUpdated, isIndexersSettingsValid, IndexersSettings } 
 import { isProfilesSettingsUpdated, isProfilesSettingsValid, ProfilesSettings } from "./profiles/profiles";
 import { isMaintenanceSettingsUpdated, Maintenance } from "./maintenance/maintenance";
 import { isRepairsSettingsUpdated, RepairsSettings } from "./repairs/repairs";
+import { isWatchdogSettingsUpdated, WatchdogSettings } from "./watchdog/watchdog";
 import { isRcloneSettingsUpdated, RcloneSettings } from "./rclone/rclone";
 import { useCallback, useState } from "react";
 import { useBlocker } from "react-router";
@@ -46,6 +47,11 @@ const defaultConfig = {
     "arr.instances": "{\"RadarrInstances\":[],\"SonarrInstances\":[],\"QueueRules\":[]}",
     "indexers.instances": "{\"Indexers\":[]}",
     "profiles.instances": "{\"Profiles\":[]}",
+    "play.total-budget-seconds": "10",
+    "play.hedge-delay-seconds": "3",
+    "play.max-candidates": "3",
+    "play.verify-mode": "stat",
+    "play.candidate-negative-cache-minutes": "5",
     "repair.enable": "false",
     "db.is-startup-vacuum-enabled": "false",
     "maintenance.remove-orphaned-schedule-enabled": "false",
@@ -97,9 +103,10 @@ function Body(props: BodyProps) {
     const isIndexersUpdated = isIndexersSettingsUpdated(config, newConfig);
     const isProfilesUpdated = isProfilesSettingsUpdated(config, newConfig);
     const isRepairsUpdated = isRepairsSettingsUpdated(config, newConfig);
+    const isWatchdogUpdated = isWatchdogSettingsUpdated(config, newConfig);
     const isRcloneUpdated = isRcloneSettingsUpdated(config, newConfig);
     const isMaintenanceUpdated = isMaintenanceSettingsUpdated(config, newConfig);
-    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isProfilesUpdated || isRepairsUpdated || isRcloneUpdated || isMaintenanceUpdated;
+    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isProfilesUpdated || isRepairsUpdated || isWatchdogUpdated || isRcloneUpdated || isMaintenanceUpdated;
     const navigationBlocker = useNavigationBlocker(isUpdated);
 
     const usenetTitle = iseUsenetUpdated ? "✏️ Usenet" : "Usenet";
@@ -109,6 +116,7 @@ function Body(props: BodyProps) {
     const indexersTitle = isIndexersUpdated ? "✏️ Indexers" : "Indexers";
     const profilesTitle = isProfilesUpdated ? "✏️ Profiles" : "Profiles";
     const repairsTitle = isRepairsUpdated ? "✏️ Repairs" : "Repairs";
+    const watchdogTitle = isWatchdogUpdated ? "✏️ Watchdog" : "Watchdog";
     const rcloneTitle = isRcloneUpdated ? "✏️ Rclone Server" : "Rclone Server";
     const maintenanceTitle = isMaintenanceUpdated ? "✏️ Maintenance" : "Maintenance";
 
@@ -178,6 +186,9 @@ function Body(props: BodyProps) {
                 </Tab>
                 <Tab eventKey="repairs" title={repairsTitle}>
                     <RepairsSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="watchdog" title={watchdogTitle}>
+                    <WatchdogSettings config={newConfig} setNewConfig={setNewConfig} />
                 </Tab>
                 <Tab eventKey="rclone" title={rcloneTitle}>
                     <RcloneSettings config={newConfig} setNewConfig={setNewConfig} />
