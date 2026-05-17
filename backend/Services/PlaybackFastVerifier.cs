@@ -38,6 +38,10 @@ public class PlaybackFastVerifier
         var sampleSegmentId = PickSampleSegment(nzb);
         if (sampleSegmentId is null) return new VerifyOutcome(Verdict.Dead, null);
 
+        // Set a holder so the NNTP layer can record which provider answered.
+        var attribution = new MultiProviderNntpClient.ResponderAttribution();
+        MultiProviderNntpClient.AttributionContext.Value = attribution;
+
         try
         {
             if (mode == "body")
@@ -46,7 +50,7 @@ public class PlaybackFastVerifier
                 var verdict = resp.ResponseType == UsenetResponseType.ArticleRetrievedBodyFollows
                     ? Verdict.Available
                     : Verdict.Dead;
-                return new VerifyOutcome(verdict, MultiProviderNntpClient.LastResponderHost.Value);
+                return new VerifyOutcome(verdict, attribution.Host);
             }
             else
             {
@@ -54,7 +58,7 @@ public class PlaybackFastVerifier
                 var verdict = resp.ResponseType == UsenetResponseType.ArticleExists
                     ? Verdict.Available
                     : Verdict.Dead;
-                return new VerifyOutcome(verdict, MultiProviderNntpClient.LastResponderHost.Value);
+                return new VerifyOutcome(verdict, attribution.Host);
             }
         }
         catch (OperationCanceledException)

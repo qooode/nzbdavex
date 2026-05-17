@@ -10,11 +10,13 @@ namespace NzbWebDAV.Clients.Usenet;
 
 public class MultiProviderNntpClient(List<MultiConnectionNntpClient> providers, ProviderUsageTracker usageTracker) : NntpClient
 {
-    // Per-call attribution: hostname of the provider that returned a non-"missing"
-    // response. Reset at the start of each RunFromPoolWithBackup, set on a successful
-    // response. Read it from the same async context immediately after an awaited call
-    // to attribute that single response to a provider (e.g. watchdog pre-verify).
-    public static readonly AsyncLocal<string?> LastResponderHost = new();
+    // Per-call attribution. Caller (e.g. PlaybackFastVerifier) sets a mutable
+    // holder on AttributionContext BEFORE invoking; we read it inside the call and
+    // mutate Host on a non-"missing" response. AsyncLocal reliably flows the holder
+    // reference DOWN to us; mutating its property is then visible to the caller via
+    // their reference (which sidesteps AsyncLocal's child→parent non-propagation).
+    public sealed class ResponderAttribution { public string? Host; }
+    public static readonly AsyncLocal<ResponderAttribution?> AttributionContext = new();
 
     public override Task ConnectAsync(string host, int port, bool useSsl, CancellationToken ct)
     {
@@ -131,7 +133,8 @@ public class MultiProviderNntpClient(List<MultiConnectionNntpClient> providers, 
         CancellationToken cancellationToken
     ) where T : UsenetResponse
     {
-        LastResponderHost.Value = null;
+        var attribution = AttributionContext.Value;
+        if (attribution != null) attribution.Host = null;
         ExceptionDispatchInfo? lastException = null;
         var orderedProviders = GetOrderedProviders();
         for (var i = 0; i < orderedProviders.Count; i++)
@@ -156,8 +159,8 @@ public class MultiProviderNntpClient(List<MultiConnectionNntpClient> providers, 
 
                 // attribute the response to this provider, unless it was a "missing" hit
                 // from the last provider (in which case nobody actually answered).
-                if (result.ResponseType != UsenetResponseType.NoArticleWithThatMessageId)
-                    LastResponderHost.Value = provider.Host;
+                if (attribution != null && result.ResponseType != UsenetResponseType.NoArticleWithThatMessageId)
+                    attribution.Host = provider.Host;
 
                 // record per-queue-item attribution only for bytes-bearing responses (BODY/ARTICLE).
                 if (result is UsenetDecodedBodyResponse or UsenetDecodedArticleResponse

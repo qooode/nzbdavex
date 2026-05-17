@@ -182,7 +182,7 @@ function ClickCard({ group }: { group: ClickGroup }) {
                                 <td className={styles.colRank}>{a.rankIndex + 1}</td>
                                 <td className={styles.colCandidate} title={a.candidateTitle}>{a.candidateTitle || "—"}</td>
                                 <td className={styles.colIndexer}>{a.indexerName || "—"}</td>
-                                <td className={styles.colProvider} title={a.providerHost ?? undefined}>{a.providerHost ?? "—"}</td>
+                                <td className={styles.colProvider} title={a.providerHost ?? undefined}>{formatProviderShort(a.providerHost)}</td>
                                 <td className={styles.colSize}>{formatBytes(a.size)}</td>
                                 <td className={styles.colOutcome}>
                                     <OutcomeBadge outcome={a.outcome} winner={a.isWinner} />
@@ -204,7 +204,7 @@ function ClickCard({ group }: { group: ClickGroup }) {
                             </div>
                             <div className={styles.attemptCardTitle} title={a.candidateTitle}>{a.candidateTitle || "—"}</div>
                             <div className={styles.attemptCardMeta}>
-                                <span title={a.providerHost ?? undefined}>📡 {a.providerHost ?? "—"}</span>
+                                <span title={a.providerHost ?? undefined}>📡 {formatProviderShort(a.providerHost)}</span>
                                 <span className={styles.attemptCardMetaDot}>·</span>
                                 <span>{formatBytes(a.size)}</span>
                                 <span className={styles.attemptCardMetaDot}>·</span>
@@ -362,6 +362,23 @@ function computeStats(groups: ClickGroup[]) {
         else inFlight++;
     }
     return { total: groups.length, resolved, failed, inFlight };
+}
+
+function formatProviderShort(raw: string | null | undefined): string {
+    if (!raw) return "—";
+    return raw.split(",").map(h => stripHost(h.trim())).filter(Boolean).join(" · ");
+}
+
+const GENERIC_HOST_PREFIXES = new Set(["news", "reader", "premium", "secure", "ssl", "nntp", "usenet", "block"]);
+
+function stripHost(host: string): string {
+    if (!host) return "";
+    const labels = host.split(".").filter(Boolean);
+    if (labels.length === 0) return host;
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return labels[0];
+    if (GENERIC_HOST_PREFIXES.has(labels[0].toLowerCase())) return labels[1];
+    return labels[0].length >= labels[1].length ? labels[0] : labels[1];
 }
 
 function formatBytes(bytes: number): string {

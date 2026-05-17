@@ -147,11 +147,17 @@ export function ProvidersBadge({ providers }: { providers: ProviderUsage[] }) {
     );
 }
 
+// Generic NNTP hostname prefixes that aren't brand-identifying.
+const GENERIC_HOST_PREFIXES = new Set(["news", "reader", "premium", "secure", "ssl", "nntp", "usenet", "block"]);
+
 function stripHost(host: string): string {
     if (!host) return "—";
-    const labels = host.split(".");
-    // for FQDNs like news.newshosting.com, the second label is usually the
-    // most identifying ("newshosting"); fall back to the first if shorter.
-    if (labels.length >= 2 && labels[1].length >= labels[0].length) return labels[1];
-    return labels[0];
+    const labels = host.split(".").filter(Boolean);
+    if (labels.length === 0) return host;
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return labels[0];
+    // 3+ labels: skip a generic prefix to get to the brand label
+    if (GENERIC_HOST_PREFIXES.has(labels[0].toLowerCase())) return labels[1];
+    // pick whichever of the first two is longer (heuristic for "more identifying")
+    return labels[0].length >= labels[1].length ? labels[0] : labels[1];
 }
