@@ -198,6 +198,13 @@ public class ConfigManager
         return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 10) : 3;
     }
 
+    public int GetPlayMaxAttempts()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("play.max-attempts"));
+        if (v == null) return 10;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 200) : 10;
+    }
+
     public string GetPlayVerifyMode()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("play.verify-mode"));

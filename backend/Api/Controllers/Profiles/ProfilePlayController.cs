@@ -24,6 +24,7 @@ public class ProfilePlayController(
     CandidateNegativeCache negativeCache,
     PlaybackFastVerifier fastVerifier,
     PlaybackAttemptLog attemptLog,
+    NewznabRateLimiter rateLimiter,
     DavDatabaseClient dbClient,
     QueueManager queueManager,
     WebsocketManager websocketManager
@@ -72,6 +73,7 @@ public class ProfilePlayController(
         var totalBudget = TimeSpan.FromSeconds(configManager.GetPlayTotalBudgetSeconds());
         var hedgeDelay = TimeSpan.FromSeconds(configManager.GetPlayHedgeDelaySeconds());
         var maxCandidates = configManager.GetPlayMaxCandidates();
+        var maxAttempts = configManager.GetPlayMaxAttempts();
         var verifyMode = configManager.GetPlayVerifyMode();
         var watchdogEnabled = configManager.IsPlaybackWatchdogEnabled();
 
@@ -104,14 +106,63 @@ public class ProfilePlayController(
             return result ?? StatusCode(504, "Still processing. Retry the link in a few seconds.");
         }
 
-        var pool = entry.Candidates
-            .Skip(entry.StartIndex)
-            .Take(maxCandidates)
-            .Where(c => !negativeCache.IsFailed(c.NzbUrl))
-            .ToList();
-        if (pool.Count == 0)
+        // Batch retry loop: try up to maxCandidates candidates in parallel per batch;
+        // if all in a batch fail, advance to the next batch — until a winner, budget elapses,
+        // total attempts (maxAttempts) are exhausted, or we run out of cached candidates.
+        var rankIndex = new Dictionary<string, int>();
+        var displayRank = 0;
+        var cursor = entry.StartIndex;
+        var attemptsUsed = 0;
+        var sawAnyBatch = false;
+
+        while (attemptsUsed < maxAttempts && cursor < entry.Candidates.Count)
+        {
+            if (totalCts.IsCancellationRequested) break;
+            if (DateTimeOffset.UtcNow >= deadline) break;
+
+            var batchBudget = Math.Min(maxCandidates, maxAttempts - attemptsUsed);
+            var pool = new List<NzbResolutionCache.Candidate>();
+            while (cursor < entry.Candidates.Count && pool.Count < batchBudget)
+            {
+                var c = entry.Candidates[cursor];
+                cursor++;
+                if (negativeCache.IsFailed(c.NzbUrl)) continue;
+                rankIndex[c.NzbUrl] = displayRank++;
+                pool.Add(c);
+            }
+            if (pool.Count == 0) break;
+
+            sawAnyBatch = true;
+            attemptsUsed += pool.Count;
+
+            var batch = await RunBatchAsync(pool, rankIndex, nzbToken, contentType, requestedTitle,
+                clickId, startsAt, verifyMode, hedgeDelay, deadline, totalCts).ConfigureAwait(false);
+
+            if (batch.Outcome != BatchOutcome.AllFailed) return batch.Action!;
+            // AllFailed → loop and try next batch.
+        }
+
+        if (!sawAnyBatch)
             return StatusCode(503, "All ranked candidates recently failed; try again shortly.");
 
+        return StatusCode(504, "All tried candidates failed. Retry in a few seconds.");
+    }
+
+    private enum BatchOutcome { Winner, AllFailed, Cancelled, BudgetTimeout }
+
+    private async Task<(BatchOutcome Outcome, IActionResult? Action)> RunBatchAsync(
+        List<NzbResolutionCache.Candidate> pool,
+        Dictionary<string, int> rankIndex,
+        string nzbToken,
+        string contentType,
+        string requestedTitle,
+        Guid clickId,
+        Dictionary<string, DateTimeOffset> startsAt,
+        string verifyMode,
+        TimeSpan hedgeDelay,
+        DateTimeOffset deadline,
+        CancellationTokenSource totalCts)
+    {
         foreach (var c in pool) startsAt[c.NzbUrl] = DateTimeOffset.UtcNow;
 
         // Phase 1 — pre-verify (parallel, hedged): fetch NZB + verify first segment exists.
@@ -139,9 +190,6 @@ public class ProfilePlayController(
 
         // Phase 2 — commit. Take pre-verified candidates in their original ranking order,
         // try to commit each (enqueue + poll), first one to complete wins.
-        var rankIndex = new Dictionary<string, int>();
-        for (var i = 0; i < pool.Count; i++) rankIndex[pool[i].NzbUrl] = i;
-
         var remaining = new List<Task<PreVerifyResult>>(preVerifies);
         var ready = new SortedList<int, PreVerifyResult>();
 
@@ -192,7 +240,7 @@ public class ProfilePlayController(
                     CancelRemainingAndRecord(clickId, contentType, requestedTitle,
                         rankIndex, startsAt, remaining, ready, totalCts,
                         "Winner found; loser cancelled to free provider connections");
-                    return action;
+                    return (BatchOutcome.Winner, action);
                 }
                 if (reason == CommitReason.QueueFailed || reason == CommitReason.EnqueueFailed)
                     negativeCache.MarkFailed(best.Candidate.NzbUrl);
@@ -201,7 +249,7 @@ public class ProfilePlayController(
                     CancelRemainingAndRecord(clickId, contentType, requestedTitle,
                         rankIndex, startsAt, remaining, ready, totalCts,
                         "Client disconnected; loser cancelled");
-                    return new EmptyResult();
+                    return (BatchOutcome.Cancelled, new EmptyResult());
                 }
                 if (reason == CommitReason.BudgetTimeout)
                 {
@@ -211,7 +259,7 @@ public class ProfilePlayController(
                     CancelRemainingAndRecord(clickId, contentType, requestedTitle,
                         rankIndex, startsAt, remaining, ready, totalCts,
                         "Budget exhausted; loser cancelled");
-                    return StatusCode(504, "Still processing. Retry the link in a few seconds.");
+                    return (BatchOutcome.BudgetTimeout, StatusCode(504, "Still processing. Retry the link in a few seconds."));
                 }
                 continue;
             }
@@ -221,12 +269,8 @@ public class ProfilePlayController(
             await Task.WhenAny(remaining).ConfigureAwait(false);
         }
 
-        // No candidate won and we're out of options (all dead, or budget elapsed).
-        // Cancel anything still in flight so it stops burning provider connections.
-        CancelRemainingAndRecord(clickId, contentType, requestedTitle,
-            rankIndex, startsAt, remaining, ready, totalCts,
-            "No candidate succeeded; remaining cancelled");
-        return StatusCode(504, "Still processing. Retry the link in a few seconds.");
+        // All candidates in this batch failed (dead or commit-failed). Caller may try another batch.
+        return (BatchOutcome.AllFailed, null);
     }
 
     // Signal in-flight pre-verify tasks to abort (freeing indexer/NNTP connections),
@@ -430,6 +474,14 @@ public class ProfilePlayController(
     {
         try
         {
+            // Throttle NZB downloads to respect each indexer's configured rate limit
+            // (MaxRequestsPerMinute). Candidates from a saturated indexer wait their turn while
+            // candidates from other indexers in the same batch proceed in parallel.
+            var indexer = configManager.GetIndexerConfig().Indexers
+                .FirstOrDefault(x => x.Name == c.IndexerName);
+            if (indexer is not null)
+                await rateLimiter.WaitAsync(c.IndexerName, indexer.MaxRequestsPerMinute, ct).ConfigureAwait(false);
+
             using var req = new HttpRequestMessage(HttpMethod.Get, c.NzbUrl);
             req.Headers.TryAddWithoutValidation("User-Agent", c.IndexerUserAgent);
             using var resp = await HttpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);

@@ -71,7 +71,7 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
             </Form.Group>
 
             <Form.Group className={styles.section}>
-                <Form.Label>Max candidates per click</Form.Label>
+                <Form.Label>Max candidates per batch</Form.Label>
                 <Form.Control
                     className={styles.input}
                     type="number"
@@ -81,7 +81,22 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     value={config["play.max-candidates"] ?? "3"}
                     onChange={e => set("play.max-candidates", e.target.value)} />
                 <p className={styles.hint}>
-                    How many alternative releases to try per click before giving up. Default 3.
+                    How many alternative releases to pre-verify in parallel per batch. Default 3.
+                </p>
+            </Form.Group>
+
+            <Form.Group className={styles.section}>
+                <Form.Label>Max attempts per click</Form.Label>
+                <Form.Control
+                    className={styles.input}
+                    type="number"
+                    min={1}
+                    max={200}
+                    disabled={!enabled}
+                    value={config["play.max-attempts"] ?? "10"}
+                    onChange={e => set("play.max-attempts", e.target.value)} />
+                <p className={styles.hint}>
+                    Total candidates to try across batches before giving up. If a batch fails, the next batch is tried until this many attempts are used or the total budget elapses. Default 10.
                 </p>
             </Form.Group>
 
