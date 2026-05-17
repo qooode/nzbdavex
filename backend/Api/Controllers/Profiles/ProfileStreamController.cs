@@ -112,11 +112,23 @@ public class ProfileStreamController(
 
         var tokens = cache.AddGroup(candidates, type);
         var streams = candidates
-            .Select((c, i) => new
+            .Select((c, i) =>
             {
-                name = c.IndexerName,
-                title = $"{c.Title}\n{FormatBytes(c.Size)}",
-                url = $"{baseUrl}/p/{token}/play/{tokens[i]}.mkv",
+                var description = BuildDescription(c);
+                return new
+                {
+                    name = $"[NZB] {c.IndexerName}",
+                    description,
+                    title = description,
+                    url = $"{baseUrl}/p/{token}/play/{tokens[i]}.mkv",
+                    behaviorHints = new
+                    {
+                        filename = c.Title,
+                        videoSize = c.Size,
+                        bingeGroup = $"nzbdavex|{c.IndexerName}|{type}",
+                        notWebReady = true,
+                    },
+                };
             })
             .ToList();
 
@@ -176,5 +188,22 @@ public class ProfileStreamController(
         double v = bytes;
         while (v >= 1024 && i < s.Length - 1) { v /= 1024; i++; }
         return $"{v:0.##} {s[i]}";
+    }
+
+    private static string BuildDescription(NzbResolutionCache.Candidate c)
+    {
+        var meta = new List<string> { FormatBytes(c.Size) };
+        if (c.Posted is { } p) meta.Add(FormatAge(DateTimeOffset.UtcNow - p));
+        meta.Add(c.IndexerName);
+        return $"{c.Title}\n{string.Join(" | ", meta)}";
+    }
+
+    private static string FormatAge(TimeSpan a)
+    {
+        if (a.TotalDays >= 365) return $"{(int)(a.TotalDays / 365)}y";
+        if (a.TotalDays >= 30) return $"{(int)(a.TotalDays / 30)}mo";
+        if (a.TotalDays >= 1) return $"{(int)a.TotalDays}d";
+        if (a.TotalHours >= 1) return $"{(int)a.TotalHours}h";
+        return "<1h";
     }
 }
