@@ -14,6 +14,7 @@ using NzbWebDAV.Extensions;
 using NzbWebDAV.Middlewares;
 using NzbWebDAV.Queue;
 using NzbWebDAV.Services;
+using NzbWebDAV.Services.Metrics;
 using NzbWebDAV.Utils;
 using NzbWebDAV.WebDav;
 using NzbWebDAV.WebDav.Base;
@@ -64,8 +65,24 @@ class Program
             await databaseContext.Database
                 .MigrateAsync(targetMigration, SigtermUtil.GetCancellationToken())
                 .ConfigureAwait(false);
+            await using (var metricsContext = new MetricsDbContext())
+            {
+                await metricsContext.Database
+                    .MigrateAsync(SigtermUtil.GetCancellationToken())
+                    .ConfigureAwait(false);
+            }
             await PerformDatabaseVacuumIfEnabled();
             return;
+        }
+
+        // ensure metrics database schema is current on regular startup too —
+        // it lives in its own file and the operational migration runner above
+        // is skipped during normal boots.
+        await using (var metricsBootstrap = new MetricsDbContext())
+        {
+            await metricsBootstrap.Database
+                .MigrateAsync(SigtermUtil.GetCancellationToken())
+                .ConfigureAwait(false);
         }
 
         // initialize the config-manager
@@ -100,6 +117,10 @@ class Program
             .AddSingleton<PlaybackAttemptLog>()
             .AddSingleton<NewznabRateLimiter>()
             .AddSingleton<TvdbIdResolver>()
+            .AddSingleton<MetricsWriter>()
+            .AddHostedService(sp => sp.GetRequiredService<MetricsWriter>())
+            .AddHostedService<MetricsRollupService>()
+            .AddHostedService<MetricsRetentionService>()
             .AddHostedService<HealthCheckService>()
             .AddHostedService<ArrMonitoringService>()
             .AddHostedService<BlobCleanupService>()
