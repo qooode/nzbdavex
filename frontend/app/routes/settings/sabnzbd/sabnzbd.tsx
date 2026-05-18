@@ -100,7 +100,7 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
                     </Form.Text>
                 </Form.Group>
             }
-            {config["api.import-strategy"] === 'strm' && <>
+            {config["api.import-strategy"] === 'strm' &&
                 <Form.Group className={styles.subGroup}>
                     <Form.Label htmlFor="completed-downloads-dir-input">Completed Downloads Dir</Form.Label>
                     <Form.Control
@@ -115,21 +115,22 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
                         This is used to tell Radarr / Sonarr where to look for completed "downloads." Make sure this path is also visible to your Radarr / Sonarr containers. The "downloads" placed in this folder will all be *.strm files that point to nzbdav for streaming.
                     </Form.Text>
                 </Form.Group>
-                <Form.Group className={styles.subGroup}>
-                    <Form.Label htmlFor="base-url-input">Base URL</Form.Label>
-                    <Form.Control
-                        className={styles.input}
-                        type="text"
-                        id="base-url-input"
-                        aria-describedby="base-url-help"
-                        placeholder="http://localhost:3000"
-                        value={config["general.base-url"]}
-                        onChange={e => setNewConfig({ ...config, "general.base-url": e.target.value })} />
-                    <Form.Text id="base-url-help" muted>
-                        What is the base URL at which you access nzbdav? Make sure that Emby/Jellyfin can access this url. This is the URL they will connect to for streaming. All *.strm files will point to this URL.
-                    </Form.Text>
-                </Form.Group>
-            </>}
+            }
+            <hr />
+            <Form.Group>
+                <Form.Label htmlFor="base-url-input">Base URL</Form.Label>
+                <Form.Control
+                    className={styles.input}
+                    type="text"
+                    id="base-url-input"
+                    aria-describedby="base-url-help"
+                    placeholder="http://localhost:3000"
+                    value={config["general.base-url"]}
+                    onChange={e => setNewConfig({ ...config, "general.base-url": e.target.value })} />
+                <Form.Text id="base-url-help" muted>
+                    The public URL at which you access nzbdav. Used for all streaming links — both <code>*.strm</code> file contents (Emby/Jellyfin) and profile streaming/sharing URLs (Plex). If left blank, nzbdav infers it from request headers, which often fails behind reverse proxies. Make sure your media servers can reach this URL.
+                </Form.Text>
+            </Form.Group>
             <hr />
             <Form.Group>
                 <Form.Label htmlFor="ignored-files-input">Ignored Files</Form.Label>
