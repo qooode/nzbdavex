@@ -26,7 +26,7 @@ const OPTIMISED_DEFAULTS: ResultFilter = {
     SkipPassworded: true,
     MinGrabs: 1,
     GrabsGraceHours: 6,
-    MaxAgeDaysWithoutGrabs: 14,
+    MaxAgeDaysWithoutGrabs: 0,
     PreferDownloaded: true,
 };
 
