@@ -172,6 +172,7 @@ public class GetAndHeadHandlerPatch : IRequestHandler
                         path, clientKey, fileName, stream.CanSeek ? stream.Length : null);
                     using var scope = _providerUsageTracker.BeginScope(sessionId);
                     await CopyToAsync(stream, response.Body, range?.Start ?? 0, range?.End,
+                        n => _activeReadRegistry.Touch(sessionId, n),
                         httpContext.RequestAborted).ConfigureAwait(false);
                 }
             }
@@ -184,7 +185,13 @@ public class GetAndHeadHandlerPatch : IRequestHandler
         return true;
     }
 
-    private async Task CopyToAsync(Stream src, Stream dest, long start, long? end, CancellationToken cancellationToken)
+    private async Task CopyToAsync(
+        Stream src,
+        Stream dest,
+        long start,
+        long? end,
+        Action<long>? onBytesServed,
+        CancellationToken cancellationToken)
     {
         // Skip to the first offset
         if (start > 0)
@@ -215,6 +222,10 @@ public class GetAndHeadHandlerPatch : IRequestHandler
 
             // Write the data to the destination stream
             await dest.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
+
+            // Tell the active-read registry how many bytes were served downstream
+            // so per-session BytesServed (and dashboards) actually populate.
+            onBytesServed?.Invoke(bytesRead);
 
             // Decrement the number of bytes left to read
             bytesToRead -= bytesRead;
