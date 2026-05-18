@@ -38,6 +38,17 @@
     margin-right: 10px;
 }
 
+.tabLabel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tabIcon {
+    color: var(--warning, #fbbf24);
+    flex-shrink: 0;
+}
+
 /* ---------- Advanced tab ---------- */
 
 .advanced {

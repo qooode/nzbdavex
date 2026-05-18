@@ -2,6 +2,8 @@ declare const styles: {
   readonly "container": string;
   readonly "tabs": string;
   readonly "button": string;
+  readonly "tabLabel": string;
+  readonly "tabIcon": string;
   readonly "advanced": string;
   readonly "advancedIntro": string;
   readonly "advancedTitle": string;
