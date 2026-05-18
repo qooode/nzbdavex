@@ -40,7 +40,10 @@ public class GetWebdavItemController(
         // Now that the real filename + size are known, update the live-streams
         // entry so the UI shows the human-readable name instead of the .ids GUID.
         if (HttpContext.Items["streamSessionId"] is Guid sid)
-            activeStreamRegistry.UpdateInfo(sid, item.Name, fileSize);
+        {
+            var displayName = item is DatabaseStoreIdFile idFile ? idFile.FriendlyName : item.Name;
+            activeStreamRegistry.UpdateInfo(sid, displayName, fileSize);
+        }
 
         // set the content-type and content-disposition headers
         Response.Headers["Content-Type"] = GetContentType(item.Name);

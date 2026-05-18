@@ -21,6 +21,11 @@ public class DatabaseStoreIdFile(
     public override long FileSize => davItem.FileSize!.Value;
     public override DateTime CreatedAt => davItem.CreatedAt;
 
+    // Name is overridden to the GUID so rclone symlink targets stay stable; this
+    // exposes the underlying human-readable filename for surfaces like the
+    // Active Reads widget that need to display something the user recognises.
+    public string FriendlyName => davItem.Name;
+
     public override Task<Stream> GetReadableStreamAsync(CancellationToken cancellationToken)
     {
         return GetItem(davItem).GetReadableStreamAsync(cancellationToken);
