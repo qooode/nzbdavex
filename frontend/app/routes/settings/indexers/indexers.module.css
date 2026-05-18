@@ -106,7 +106,7 @@
     color: var(--text-muted);
     background: var(--bg-surface-2);
     border: 1px solid var(--border-subtle);
-    border-radius: 999px;
+    border-radius: 6px;
     vertical-align: middle;
 }
 

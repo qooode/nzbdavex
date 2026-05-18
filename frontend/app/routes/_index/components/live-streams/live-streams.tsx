@@ -68,7 +68,7 @@ export function LiveStreams() {
     return (
         <div className={styles.container}>
             <div className={styles.title}>
-                Now Streaming
+                Active Reads
             </div>
             <div className={styles.list}>
                 {streams.map(s => <StreamRow key={s.id} stream={s} />)}

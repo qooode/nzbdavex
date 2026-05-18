@@ -119,7 +119,7 @@
     align-items: center;
     gap: 8px;
     padding: 5px 12px;
-    border-radius: 999px;
+    border-radius: 6px;
     font-size: 12px;
     font-weight: 500;
     color: var(--text-secondary);
@@ -144,7 +144,7 @@
     color: var(--text-muted);
     background: var(--bg-base);
     padding: 1px 7px;
-    border-radius: 999px;
+    border-radius: 6px;
     border: 1px solid var(--border-subtle);
     font-variant-numeric: tabular-nums;
     line-height: 1.4;
@@ -235,7 +235,7 @@
 .statusPill {
     display: inline-block;
     padding: 3px 10px;
-    border-radius: 999px;
+    border-radius: 6px;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;

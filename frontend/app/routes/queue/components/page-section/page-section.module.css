@@ -28,7 +28,7 @@
     font-weight: 500;
     background: var(--bg-surface);
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: 6px;
     border: 1px solid var(--border-subtle);
     letter-spacing: 0.01em;
 }

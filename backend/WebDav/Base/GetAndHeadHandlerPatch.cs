@@ -160,8 +160,10 @@ public class GetAndHeadHandlerPatch : IRequestHandler
                 if (!isHeadRequest)
                 {
                     var path = request.GetUri().AbsolutePath;
-                    var fileName = System.IO.Path.GetFileName(path);
                     var clientKey = $"{httpContext.Connection.RemoteIpAddress}|{request.Headers.UserAgent}";
+                    // entry.Name is the real filename (the URL path can be an opaque
+                    // .ids/{guid} for symlink-redirected reads).
+                    var fileName = !string.IsNullOrEmpty(entry.Name) ? entry.Name : System.IO.Path.GetFileName(path);
                     var sessionId = _activeStreamRegistry.GetOrCreate(
                         path, clientKey, fileName, stream.CanSeek ? stream.Length : null);
                     using var scope = _providerUsageTracker.BeginScope(sessionId);

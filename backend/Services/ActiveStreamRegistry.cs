@@ -48,6 +48,18 @@ public class ActiveStreamRegistry
         }
     }
 
+    /// <summary>
+    /// Update the user-facing metadata on an existing session. Used once the
+    /// real filename/size are resolved from the dav store (the path passed to
+    /// GetOrCreate is usually an opaque GUID for .ids/-style paths).
+    /// </summary>
+    public void UpdateInfo(Guid id, string? fileName, long? fileSize)
+    {
+        if (!_entries.TryGetValue(id, out var entry)) return;
+        if (!string.IsNullOrWhiteSpace(fileName)) entry.FileName = fileName;
+        if (fileSize is { } size) entry.FileSize = size;
+    }
+
     public IReadOnlyList<Entry> Snapshot()
     {
         var cutoff = DateTimeOffset.UtcNow - ActivityWindow;
@@ -88,7 +100,7 @@ public class ActiveStreamRegistry
     {
         public Guid Id { get; init; }
         public string Path { get; init; } = "";
-        public string FileName { get; init; } = "";
+        public string FileName { get; set; } = "";
         public long? FileSize { get; set; }
         public string ClientKey { get; init; } = "";
         public DateTimeOffset StartedAt { get; init; }

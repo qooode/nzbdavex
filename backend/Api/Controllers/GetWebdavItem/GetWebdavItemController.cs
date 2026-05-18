@@ -37,6 +37,11 @@ public class GetWebdavItemController(
         var stream = await item.GetReadableStreamAsync(HttpContext.RequestAborted).ConfigureAwait(false);
         var fileSize = stream.Length;
 
+        // Now that the real filename + size are known, update the live-streams
+        // entry so the UI shows the human-readable name instead of the .ids GUID.
+        if (HttpContext.Items["streamSessionId"] is Guid sid)
+            activeStreamRegistry.UpdateInfo(sid, item.Name, fileSize);
+
         // set the content-type and content-disposition headers
         Response.Headers["Content-Type"] = GetContentType(item.Name);
         Response.Headers["Content-Disposition"] = GetContentDisposition(item.Name, request.ShouldDownload);
@@ -76,6 +81,7 @@ public class GetWebdavItemController(
             HttpContext.Items["configManager"] = configManager;
             var request = new GetWebdavItemRequest(HttpContext);
             var sessionId = TrackStreamSession(request.Item);
+            HttpContext.Items["streamSessionId"] = sessionId;
             using var scope = providerUsageTracker.BeginScope(sessionId);
             await using var response = await GetWebdavItem(request);
             await CopyAndTrackAsync(response, Response.Body, sessionId, HttpContext.RequestAborted);
@@ -88,6 +94,8 @@ public class GetWebdavItemController(
 
     private Guid TrackStreamSession(string itemPath)
     {
+        // Provisional name from the URL path. GetWebdavItem replaces it with
+        // item.Name (the real human-readable filename) once the store lookup runs.
         var fileName = Path.GetFileName(itemPath);
         var clientKey = $"{HttpContext.Connection.RemoteIpAddress}|{Request.Headers.UserAgent}";
         return activeStreamRegistry.GetOrCreate(itemPath, clientKey, fileName, fileSize: null);
