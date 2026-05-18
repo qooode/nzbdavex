@@ -271,26 +271,22 @@ public class GetOverviewStatsController(
 
     private async Task<GetOverviewStatsResponse.CatalogueBlock> BuildCatalogueAsync()
     {
-        var nowSec = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var thirtyDaysAgoSec = nowSec - 30L * 24 * 3600;
+        var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
 
         var files = davDb.Ctx.Items.Where(i => i.Type == DavItem.ItemType.UsenetFile);
         var fileCount = await files.CountAsync().ConfigureAwait(false);
         var totalBytes = await files.SumAsync(i => (long?)i.FileSize).ConfigureAwait(false) ?? 0L;
-        var checkedCount = await davDb.Ctx.Items
-            .Where(i => i.Type == DavItem.ItemType.UsenetFile && i.LastHealthCheck.HasValue
-                        && i.LastHealthCheck.Value >= DateTimeOffset.FromUnixTimeSeconds(thirtyDaysAgoSec))
-            .CountAsync().ConfigureAwait(false);
-        var backlog = await davDb.Ctx.HealthCheckResults
-            .Where(r => r.RepairStatus == HealthCheckResult.RepairAction.ActionNeeded)
+        var largest = await files.MaxAsync(i => (long?)i.FileSize).ConfigureAwait(false) ?? 0L;
+        var addedRecently = await files
+            .Where(i => i.CreatedAt >= sevenDaysAgo)
             .CountAsync().ConfigureAwait(false);
 
         return new GetOverviewStatsResponse.CatalogueBlock
         {
             FileCount = fileCount,
             TotalBytes = totalBytes,
-            CheckedPercent = fileCount > 0 ? 100.0 * checkedCount / fileCount : 0,
-            RepairBacklog = backlog,
+            LargestFileBytes = largest,
+            AddedLast7Days = addedRecently,
         };
     }
 

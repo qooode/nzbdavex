@@ -46,6 +46,13 @@
 .warn { color: #d97706; border-color: #d97706; }
 .danger { color: var(--danger-muted); border-color: var(--danger-muted); }
 
+.pctileTop {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
 .pctileLabel {
     font-size: 10px;
     text-transform: uppercase;
@@ -54,12 +61,21 @@
     font-weight: 500;
 }
 
+.pctileCaption {
+    font-size: 9px;
+    text-transform: lowercase;
+    color: var(--text-muted);
+    opacity: 0.7;
+    letter-spacing: 0.02em;
+}
+
 .pctileValue {
     font-size: 17px;
     font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.1;
     font-variant-numeric: tabular-nums;
+    margin-top: 1px;
 }
 
 .empty {
@@ -101,8 +117,9 @@
     transition: filter 120ms ease;
 }
 
-.barCol:hover .bar {
-    filter: brightness(1.2);
+.barCol:hover .bar,
+.barHover .bar {
+    filter: brightness(1.3);
 }
 
 .barLabel {
@@ -110,10 +127,17 @@
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    text-align: center;
+    white-space: nowrap;
 }
 
-.legend {
-    margin-top: 8px;
+.footer {
+    margin-top: 10px;
+}
+
+.tooltip {
     font-size: 11px;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-height: 14px;
 }

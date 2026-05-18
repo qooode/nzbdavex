@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import styles from "./latency-histogram.module.css";
 import type { LatencyBucket } from "~/clients/backend-client.server";
-import { formatNumber } from "../../utils/format";
+import { formatNumber, formatPercent } from "../../utils/format";
 
 export type LatencyHistogramProps = {
     p50Ms: number,
@@ -12,10 +12,12 @@ export type LatencyHistogramProps = {
 }
 
 export function LatencyHistogram({ p50Ms, p95Ms, p99Ms, samples, buckets }: LatencyHistogramProps) {
-    const { maxCount, displayBuckets } = useMemo(() => {
-        const max = buckets.reduce((m, b) => Math.max(m, b.count), 0);
-        return { maxCount: max, displayBuckets: buckets };
-    }, [buckets]);
+    const [hover, setHover] = useState<LatencyBucket | null>(null);
+
+    const maxCount = useMemo(
+        () => buckets.reduce((m, b) => Math.max(m, b.count), 0),
+        [buckets]
+    );
 
     const empty = samples === 0;
 
@@ -23,13 +25,16 @@ export function LatencyHistogram({ p50Ms, p95Ms, p99Ms, samples, buckets }: Late
         <div className={styles.container}>
             <div className={styles.header}>
                 <div>
-                    <h3 className={styles.title}>Fetch latency</h3>
-                    <div className={styles.sub}>{empty ? "Waiting for fetches" : `${formatNumber(samples)} samples`}</div>
+                    <h3 className={styles.title}>Fetch time per article</h3>
+                    <div className={styles.sub}>
+                        How long each successful article takes to retrieve from a Usenet provider
+                        {!empty && <> · {formatNumber(samples)} samples</>}
+                    </div>
                 </div>
                 <div className={styles.percentiles}>
-                    <Pctile label="p50" ms={p50Ms} kind="ok" />
-                    <Pctile label="p95" ms={p95Ms} kind={p95Ms > 1500 ? "warn" : "ok"} />
-                    <Pctile label="p99" ms={p99Ms} kind={p99Ms > 5000 ? "danger" : p99Ms > 2000 ? "warn" : "ok"} />
+                    <Pctile label="p50" caption="median" ms={p50Ms} kind="ok" />
+                    <Pctile label="p95" caption="95th" ms={p95Ms} kind={p95Ms > 1500 ? "warn" : "ok"} />
+                    <Pctile label="p99" caption="99th" ms={p99Ms} kind={p99Ms > 5000 ? "danger" : p99Ms > 2000 ? "warn" : "ok"} />
                 </div>
             </div>
 
@@ -38,30 +43,50 @@ export function LatencyHistogram({ p50Ms, p95Ms, p99Ms, samples, buckets }: Late
             ) : (
                 <>
                     <div className={styles.bars}>
-                        {displayBuckets.map((b, i) => {
+                        {buckets.map((b, i) => {
                             const h = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
+                            const isHover = hover === b;
                             return (
-                                <div key={i} className={styles.barCol} title={`${formatRange(b.loMs, b.hiMs)} • ${formatNumber(b.count)} fetches`}>
+                                <div
+                                    key={i}
+                                    className={`${styles.barCol} ${isHover ? styles.barHover : ""}`}
+                                    onMouseEnter={() => setHover(b)}
+                                    onMouseLeave={() => setHover(h => h === b ? null : h)}
+                                >
                                     <div className={styles.barWrap}>
                                         <div className={styles.bar} style={{ height: `${h.toFixed(1)}%` }} />
                                     </div>
-                                    <div className={styles.barLabel}>{shortLabel(b.loMs)}</div>
+                                    <div className={styles.barLabel}>{bucketLabel(b)}</div>
                                 </div>
                             );
                         })}
                     </div>
-                    <div className={styles.legend}>Bucket: lower bound in ms.</div>
+                    <div className={styles.footer}>
+                        <div className={styles.tooltip}>
+                            {hover ? (
+                                <>
+                                    {fullBucketLabel(hover)} &mdash; {formatNumber(hover.count)} {hover.count === 1 ? "fetch" : "fetches"}
+                                    {samples > 0 && <> · {formatPercent((hover.count / samples) * 100, 1)}</>}
+                                </>
+                            ) : (
+                                <>Hover a bar for exact count. Faster fetches are on the left.</>
+                            )}
+                        </div>
+                    </div>
                 </>
             )}
         </div>
     );
 }
 
-function Pctile({ label, ms, kind }: { label: string, ms: number, kind: "ok" | "warn" | "danger" }) {
+function Pctile({ label, caption, ms, kind }: { label: string, caption: string, ms: number, kind: "ok" | "warn" | "danger" }) {
     const cls = kind === "danger" ? styles.danger : kind === "warn" ? styles.warn : styles.ok;
     return (
-        <div className={`${styles.pctile} ${cls}`}>
-            <div className={styles.pctileLabel}>{label}</div>
+        <div className={`${styles.pctile} ${cls}`} title={`${caption} — ${ms} ms`}>
+            <div className={styles.pctileTop}>
+                <span className={styles.pctileLabel}>{label}</span>
+                <span className={styles.pctileCaption}>{caption}</span>
+            </div>
             <div className={styles.pctileValue}>{formatMs(ms)}</div>
         </div>
     );
@@ -72,12 +97,19 @@ function formatMs(ms: number): string {
     return `${ms} ms`;
 }
 
-function formatRange(lo: number, hi: number): string {
-    if (hi >= 1e9) return `≥ ${lo} ms`;
-    return `${lo}–${hi} ms`;
+function bucketLabel(b: LatencyBucket): string {
+    if (b.loMs === 0) return `<${formatBucketBound(b.hiMs)}`;
+    if (b.hiMs >= 1_000_000_000) return `≥${formatBucketBound(b.loMs)}`;
+    return `${formatBucketBound(b.loMs)}–${formatBucketBound(b.hiMs)}`;
 }
 
-function shortLabel(lo: number): string {
-    if (lo >= 1000) return `${lo / 1000}s`;
-    return `${lo}`;
+function fullBucketLabel(b: LatencyBucket): string {
+    if (b.loMs === 0) return `Faster than ${formatBucketBound(b.hiMs)}`;
+    if (b.hiMs >= 1_000_000_000) return `${formatBucketBound(b.loMs)} or slower`;
+    return `${formatBucketBound(b.loMs)} – ${formatBucketBound(b.hiMs)}`;
+}
+
+function formatBucketBound(ms: number): string {
+    if (ms >= 1000) return `${ms / 1000}s`;
+    return `${ms}ms`;
 }

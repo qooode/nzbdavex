@@ -474,8 +474,8 @@ export type OverviewStatsResponse = {
     catalogue: {
         fileCount: number,
         totalBytes: number,
-        checkedPercent: number,
-        repairBacklog: number,
+        largestFileBytes: number,
+        addedLast7Days: number,
     },
     sessions: {
         count: number,

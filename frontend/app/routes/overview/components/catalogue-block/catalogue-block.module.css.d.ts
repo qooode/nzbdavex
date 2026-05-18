@@ -6,6 +6,7 @@ declare const styles: {
   readonly grid: string;
   readonly cell: string;
   readonly warn: string;
+  readonly good: string;
   readonly label: string;
   readonly value: string;
 };

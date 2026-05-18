@@ -49,8 +49,8 @@ public class GetOverviewStatsResponse
     {
         public long FileCount { get; init; }
         public long TotalBytes { get; init; }
-        public double CheckedPercent { get; init; }
-        public long RepairBacklog { get; init; }
+        public long LargestFileBytes { get; init; }
+        public long AddedLast7Days { get; init; }
     }
 
     public class SessionsBlock
