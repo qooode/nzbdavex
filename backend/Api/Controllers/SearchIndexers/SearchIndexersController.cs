@@ -14,7 +14,9 @@ public class SearchIndexersController(ConfigManager configManager, NewznabRateLi
     protected override async Task<IActionResult> HandleRequest()
     {
         var request = new SearchIndexersRequest(HttpContext);
-        var indexers = configManager.GetIndexerConfig().Indexers.Where(x => x.Enabled).ToList();
+        var indexerConfig = configManager.GetIndexerConfig();
+        var indexers = indexerConfig.Indexers.Where(x => x.Enabled).ToList();
+        var globalProxy = indexerConfig.ProxyUrl;
         var ct = HttpContext.RequestAborted;
 
         var perIndexer = await Task.WhenAll(indexers.Select(async x =>
@@ -23,8 +25,9 @@ public class SearchIndexersController(ConfigManager configManager, NewznabRateLi
             try
             {
                 var ua = string.IsNullOrWhiteSpace(x.UserAgent) ? configManager.GetUserAgent() : x.UserAgent;
+                var proxy = string.IsNullOrWhiteSpace(x.ProxyUrl) ? globalProxy : x.ProxyUrl;
                 await rateLimiter.WaitAsync(x.Name, x.MaxRequestsPerMinute, ct).ConfigureAwait(false);
-                var client = new NewznabClient(x.Url, x.ApiKey, ua);
+                var client = new NewznabClient(x.Url, x.ApiKey, ua, proxy);
                 var items = await client.SearchAsync(request.Query, request.Limit, ct).ConfigureAwait(false);
                 var mapped = items
                     .Where(i => !x.EnableStrictMatching || FilenameMatcher.Matches(request.Query, i.Title))

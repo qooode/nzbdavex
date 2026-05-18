@@ -31,10 +31,12 @@ public class ProfileStreamController(
         var profile = configManager.GetProfileConfig().Profiles.FirstOrDefault(x => x.Token == token);
         if (profile is null) return NotFound();
 
-        var allIndexers = configManager.GetIndexerConfig().Indexers.Where(x => x.Enabled).ToList();
+        var indexerConfig = configManager.GetIndexerConfig();
+        var allIndexers = indexerConfig.Indexers.Where(x => x.Enabled).ToList();
         var indexers = profile.IndexerNames.Count == 0
             ? allIndexers
             : allIndexers.Where(x => profile.IndexerNames.Contains(x.Name)).ToList();
+        var globalProxy = indexerConfig.ProxyUrl;
 
         if (indexers.Count == 0) return new JsonResult(new { streams = Array.Empty<object>() });
 
@@ -48,8 +50,9 @@ public class ProfileStreamController(
             try
             {
                 var ua = string.IsNullOrWhiteSpace(x.UserAgent) ? configManager.GetUserAgent() : x.UserAgent;
+                var proxy = string.IsNullOrWhiteSpace(x.ProxyUrl) ? globalProxy : x.ProxyUrl;
                 await rateLimiter.WaitAsync(x.Name, x.MaxRequestsPerMinute, ct).ConfigureAwait(false);
-                var client = new NewznabClient(x.Url, x.ApiKey, ua);
+                var client = new NewznabClient(x.Url, x.ApiKey, ua, proxy);
                 var items = await client.QueryAsync(queryParams, ct).ConfigureAwait(false);
                 var filtered = IndexerResultFilter.Apply(items, x.Filter, now);
                 return filtered.Select(i => new { indexer = x.Name, userAgent = ua, item = i });

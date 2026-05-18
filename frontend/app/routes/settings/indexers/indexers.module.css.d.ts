@@ -2,6 +2,7 @@ declare const styles: {
   readonly "container": string;
   readonly "section": string;
   readonly "sectionHeader": string;
+  readonly "section-description": string;
   readonly "alertMessage": string;
   readonly "indexers-grid": string;
   readonly "indexer-card": string;

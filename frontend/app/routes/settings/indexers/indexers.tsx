@@ -38,24 +38,42 @@ interface ConnectionDetails {
     UserAgent?: string;
     MaxRequestsPerMinute?: number;
     EnableStrictMatching?: boolean;
+    ProxyUrl?: string;
     Filter?: ResultFilter;
 }
 
 interface IndexerConfig {
+    ProxyUrl?: string;
     Indexers: ConnectionDetails[];
 }
 
 function parseConfig(raw: string): IndexerConfig {
     try {
         const parsed = JSON.parse(raw || "{}");
-        return { Indexers: parsed.Indexers ?? [] };
+        return {
+            ProxyUrl: parsed.ProxyUrl ?? "",
+            Indexers: parsed.Indexers ?? [],
+        };
     } catch {
-        return { Indexers: [] };
+        return { ProxyUrl: "", Indexers: [] };
     }
 }
 
 function serializeConfig(c: IndexerConfig): string {
-    return JSON.stringify(c);
+    const out: IndexerConfig = { Indexers: c.Indexers };
+    if (c.ProxyUrl && c.ProxyUrl.trim()) out.ProxyUrl = c.ProxyUrl.trim();
+    return JSON.stringify(out);
+}
+
+// http://host:port, https://..., optionally with user:pass@. Empty string = no proxy.
+function isProxyUrlValid(raw: string): boolean {
+    if (!raw.trim()) return true;
+    try {
+        const u = new URL(raw);
+        return (u.protocol === "http:" || u.protocol === "https:") && u.host !== "";
+    } catch {
+        return false;
+    }
 }
 
 export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps) {
@@ -75,6 +93,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
 
     const handleDelete = useCallback((index: number) => {
         const next: IndexerConfig = {
+            ProxyUrl: indexerConfig.ProxyUrl,
             Indexers: indexerConfig.Indexers.filter((_, i) => i !== index),
         };
         setNewConfig({ ...config, "indexers.instances": serializeConfig(next) });
@@ -82,6 +101,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
 
     const handleToggle = useCallback((index: number) => {
         const next: IndexerConfig = {
+            ProxyUrl: indexerConfig.ProxyUrl,
             Indexers: indexerConfig.Indexers.map((x, i) =>
                 i === index ? { ...x, Enabled: !x.Enabled } : x
             ),
@@ -95,7 +115,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
     }, []);
 
     const handleSave = useCallback((indexer: ConnectionDetails) => {
-        const next: IndexerConfig = { Indexers: [...indexerConfig.Indexers] };
+        const next: IndexerConfig = { ProxyUrl: indexerConfig.ProxyUrl, Indexers: [...indexerConfig.Indexers] };
         if (editingIndex !== null) {
             next.Indexers[editingIndex] = indexer;
         } else {
@@ -105,11 +125,41 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
         handleCloseModal();
     }, [config, indexerConfig, editingIndex, setNewConfig, handleCloseModal]);
 
+    const handleProxyChange = useCallback((value: string) => {
+        const next: IndexerConfig = { ...indexerConfig, ProxyUrl: value };
+        setNewConfig({ ...config, "indexers.instances": serializeConfig(next) });
+    }, [config, indexerConfig, setNewConfig]);
+
+    const proxyUrl = indexerConfig.ProxyUrl ?? "";
+    const proxyValid = isProxyUrlValid(proxyUrl);
+
     return (
         <div className={styles.container}>
             <div className={styles.section}>
                 <div className={styles.sectionHeader}>
-                    <div>Newznab Indexers</div>
+                    <div>
+                        <div>Default Proxy</div>
+                        <div className={styles["section-description"]}>
+                            Global HTTP(S) proxy used by indexers when a per-indexer proxy is not set.
+                        </div>
+                    </div>
+                </div>
+                <div className={styles["form-group"]}>
+                    <label htmlFor="indexers-default-proxy" className={styles["form-label"]}>HTTP(S) Proxy URL</label>
+                    <input
+                        type="text"
+                        id="indexers-default-proxy"
+                        className={`${styles["form-input"]} ${!proxyValid ? styles.error : ""}`}
+                        placeholder="http://proxy:8888"
+                        value={proxyUrl}
+                        onChange={e => handleProxyChange(e.target.value)}
+                    />
+                </div>
+            </div>
+
+            <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                    <div>Indexers</div>
                     <Button variant="primary" size="sm" onClick={handleAdd}>Add</Button>
                 </div>
 
@@ -159,6 +209,7 @@ function IndexerCard({ indexer, onEdit, onToggle, onDelete }: IndexerCardProps) 
         ? `${indexer.MaxRequestsPerMinute} / min`
         : "Unlimited";
     const userAgent = indexer.UserAgent?.trim() ? indexer.UserAgent : "Default";
+    const proxy = indexer.ProxyUrl?.trim() ? indexer.ProxyUrl : "Default";
 
     return (
         <div className={`${styles["indexer-card"]} ${isDisabled ? styles["indexer-card-disabled"] : ""}`}>
@@ -276,6 +327,19 @@ function IndexerCard({ indexer, onEdit, onToggle, onDelete }: IndexerCardProps) 
                                 </span>
                             </div>
                         </div>
+
+                        <div className={styles["indexer-detail-item"]}>
+                            <div className={styles["indexer-detail-icon"]}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="2" y="6" width="20" height="12" rx="2" />
+                                    <path d="M6 12h.01M10 12h.01M14 12h.01M18 12h.01" />
+                                </svg>
+                            </div>
+                            <div className={styles["indexer-detail-content"]}>
+                                <span className={styles["indexer-detail-label"]}>Proxy</span>
+                                <span className={styles["indexer-detail-value"]} title={indexer.ProxyUrl ?? ""}>{proxy}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -295,6 +359,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
     const [url, setUrl] = useState("");
     const [apiKey, setApiKey] = useState("");
     const [userAgent, setUserAgent] = useState("");
+    const [proxyUrl, setProxyUrl] = useState("");
     const [maxRpm, setMaxRpm] = useState("0");
     const [enabled, setEnabled] = useState(true);
     const [strict, setStrict] = useState(false);
@@ -323,6 +388,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
             setUrl(indexer?.Url || "");
             setApiKey(indexer?.ApiKey || "");
             setUserAgent(indexer?.UserAgent || "");
+            setProxyUrl(indexer?.ProxyUrl || "");
             setMaxRpm((indexer?.MaxRequestsPerMinute ?? 0).toString());
             setEnabled(indexer?.Enabled ?? true);
             setStrict(indexer?.EnableStrictMatching ?? false);
@@ -338,7 +404,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
         }
     }, [show, indexer]);
 
-    useEffect(() => { setTestState('idle'); }, [url, apiKey, userAgent]);
+    useEffect(() => { setTestState('idle'); }, [url, apiKey, userAgent, proxyUrl]);
 
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
@@ -358,13 +424,14 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
             fd.append('url', url);
             fd.append('apiKey', apiKey);
             if (userAgent.trim()) fd.append('userAgent', userAgent);
+            if (proxyUrl.trim()) fd.append('proxyUrl', proxyUrl);
             const r = await fetch('/api/test-indexer-connection', { method: 'POST', body: fd });
             const data = await r.json();
             setTestState(data.status && data.connected ? 'success' : 'error');
         } catch {
             setTestState('error');
         }
-    }, [url, apiKey, userAgent]);
+    }, [url, apiKey, userAgent, proxyUrl]);
 
     const handleSave = useCallback(() => {
         const rpm = parseInt(maxRpm || "0", 10);
@@ -384,6 +451,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
             ApiKey: apiKey.trim(),
             Enabled: enabled,
             UserAgent: userAgent.trim() || undefined,
+            ProxyUrl: proxyUrl.trim() || undefined,
             MaxRequestsPerMinute: Number.isFinite(rpm) && rpm > 0 ? rpm : 0,
             EnableStrictMatching: strict,
             Filter: filterIsClean ? undefined : {
@@ -395,7 +463,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                 PreferDownloaded: filterPreferDownloaded,
             },
         });
-    }, [name, url, apiKey, userAgent, maxRpm, enabled, strict,
+    }, [name, url, apiKey, userAgent, proxyUrl, maxRpm, enabled, strict,
         filterEnabled, filterSkipPassworded, filterMinGrabs, filterGrabsGraceHours,
         filterMaxAgeDaysWithoutGrabs, filterPreferDownloaded, onSave]);
 
@@ -411,7 +479,8 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
         const n = Number(maxRpm);
         return Number.isInteger(n) && n >= 0 && maxRpm.trim() === n.toString();
     })();
-    const isFormValid = name.trim() !== "" && isUrlValid && apiKey.trim() !== "" && isRpmValid;
+    const isProxyValid = isProxyUrlValid(proxyUrl);
+    const isFormValid = name.trim() !== "" && isUrlValid && apiKey.trim() !== "" && isRpmValid && isProxyValid;
 
     if (!show) return null;
 
@@ -473,6 +542,20 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 placeholder="Leave blank to use global default"
                                 value={userAgent}
                                 onChange={e => setUserAgent(e.target.value)}
+                            />
+                        </div>
+
+                        <div className={`${styles["form-group"]} ${styles["full-width"]}`}>
+                            <label htmlFor="indexer-proxy" className={styles["form-label"]}>
+                                HTTP(S) Proxy URL <span className={styles["label-hint"]}>(optional; overrides the global default)</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="indexer-proxy"
+                                className={`${styles["form-input"]} ${!isProxyValid && proxyUrl !== "" ? styles.error : ""}`}
+                                placeholder="Leave blank to use global default"
+                                value={proxyUrl}
+                                onChange={e => setProxyUrl(e.target.value)}
                             />
                         </div>
 
@@ -700,10 +783,12 @@ export function isIndexersSettingsUpdated(config: Record<string, string>, newCon
 export function isIndexersSettingsValid(newConfig: Record<string, string>) {
     try {
         const c = parseConfig(newConfig["indexers.instances"]);
+        if (!isProxyUrlValid(c.ProxyUrl ?? "")) return false;
         for (const i of c.Indexers) {
             if (!i.Name.trim()) return false;
             if (!i.ApiKey.trim()) return false;
             try { new URL(i.Url); } catch { return false; }
+            if (!isProxyUrlValid(i.ProxyUrl ?? "")) return false;
         }
         return true;
     } catch {

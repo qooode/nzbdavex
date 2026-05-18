@@ -13,7 +13,10 @@ public class TestIndexerConnectionController(NzbWebDAV.Config.ConfigManager conf
         try
         {
             var ua = string.IsNullOrWhiteSpace(request.UserAgent) ? configManager.GetUserAgent() : request.UserAgent;
-            var client = new NewznabClient(request.Url, request.ApiKey, ua);
+            var proxy = string.IsNullOrWhiteSpace(request.ProxyUrl)
+                ? configManager.GetIndexerConfig().ProxyUrl
+                : request.ProxyUrl;
+            var client = new NewznabClient(request.Url, request.ApiKey, ua, proxy);
             var ok = await client.TestAsync(HttpContext.RequestAborted).ConfigureAwait(false);
             return Ok(new TestIndexerConnectionResponse { Status = true, Connected = ok });
         }
