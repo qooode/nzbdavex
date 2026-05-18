@@ -186,12 +186,31 @@ public class MultiConnectionNntpClient(
             }
             catch (Exception e) when (e.IsCancellationException())
             {
+                // cancelled BODY/ARTICLE leaves unread response bytes on the socket;
+                // pooling would poison the next request with a misparsed 'not found'.
+                if (name is "BODY" or "ARTICLE")
+                    LogException(() => connectionLock?.Replace());
                 LogException(() => connectionLock?.Dispose());
                 LogException(() => onConnectionReadyAgain?.Invoke(ArticleBodyResult.NotRetrieved));
                 throw;
             }
             catch (Exception e) when (e.TryGetCausingException(out UsenetArticleNotFoundException _))
             {
+                // a 'not found' on BODY/ARTICLE may be misparsed leftover bytes from
+                // an earlier poisoned connection; destroy and retry once on a fresh socket.
+                if (name is "BODY" or "ARTICLE")
+                {
+                    LogException(() => connectionLock?.Replace());
+                    LogException(() => connectionLock?.Dispose());
+                    if (retryCount > 0)
+                    {
+                        Log.Debug(e, $"Got 'article not found' on nntp {name}. Retrying once with a fresh connection.");
+                        retryCount--;
+                        continue;
+                    }
+                    LogException(() => onConnectionReadyAgain?.Invoke(ArticleBodyResult.NotRetrieved));
+                    throw;
+                }
                 LogException(() => connectionLock?.Dispose());
                 LogException(() => onConnectionReadyAgain?.Invoke(ArticleBodyResult.NotRetrieved));
                 throw;
