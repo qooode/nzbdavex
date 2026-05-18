@@ -754,11 +754,12 @@ public class ProfilePlayController(
     // Necessary because the queue item's filename comes from the WINNING candidate,
     // not from the player's requested primary candidate — so matching by Primary.Title
     // alone misses every prior click where the winner was a different release variant
-    // (e.g. requested REMUX-d3g but resolved via x265-DON).
+    // (e.g. requested REMUX-d3g but resolved via x265-DON). Since the round-robin
+    // fallback queue can win with a candidate at any position in the ranked list,
+    // the lookup must span the full list, not just [StartIndex..end].
     private async Task<IActionResult?> TryResolveExistingAsync(NzbResolutionCache.Entry entry, CancellationToken ct)
     {
         var fileNames = entry.Candidates
-            .Skip(entry.StartIndex)
             .Select(c => $"{SanitizeFileName(c.Title)}.nzb")
             .Distinct()
             .ToList();
