@@ -45,10 +45,14 @@ COPY --from=backend-build /backend/publish ./backend
 
 # Entry and runtime setup
 COPY entrypoint.sh /entrypoint.sh
+COPY version.txt /app/version.txt
 RUN chmod +x /entrypoint.sh
 
 # Set env variables
 EXPOSE 3000
+# Optional build-arg; entrypoint.sh falls back to /app/version.txt
+# when this is empty so Coolify-style deploys (no build-arg) still
+# show the right version in the UI.
 ARG NZBDAV_VERSION
 ENV NZBDAV_VERSION=${NZBDAV_VERSION}
 ENV NODE_ENV=production
