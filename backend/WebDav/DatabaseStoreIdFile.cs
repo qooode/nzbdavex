@@ -4,6 +4,7 @@ using NzbWebDAV.Clients.Usenet;
 using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
+using NzbWebDAV.Services;
 using NzbWebDAV.WebDav.Base;
 
 namespace NzbWebDAV.WebDav;
@@ -13,7 +14,8 @@ public class DatabaseStoreIdFile(
     HttpContext httpContext,
     DavDatabaseClient dbClient,
     UsenetStreamingClient usenetClient,
-    ConfigManager configManager
+    ConfigManager configManager,
+    LazyRarResolver lazyRarResolver
 ) : BaseStoreReadonlyItem
 {
     public override string Name => davItem.Id.ToString();
@@ -40,7 +42,8 @@ public class DatabaseStoreIdFile(
             DavItem.ItemSubType.RarFile =>
                 new DatabaseStoreRarFile(davItem, httpContext, dbClient, usenetClient, configManager),
             DavItem.ItemSubType.MultipartFile =>
-                new DatabaseStoreMultipartFile(davItem, httpContext, dbClient, usenetClient, configManager),
+                new DatabaseStoreMultipartFile(davItem, httpContext, dbClient, usenetClient, configManager,
+                    lazyRarResolver),
             _ => throw new ArgumentException("Unrecognized id child type.")
         };
     }

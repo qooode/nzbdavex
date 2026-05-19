@@ -149,6 +149,16 @@ public class ConfigManager
         );
     }
 
+    // When true, RAR archives are mounted instantly by parsing only the first
+    // volume at import; trailing volumes are resolved on first read. Falls
+    // back to eager parsing for archives that don't fit the supported shape
+    // (multi-file, solid, encrypted, or compressed).
+    public bool IsLazyRarParsingEnabled()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("api.lazy-rar-parsing"));
+        return v == null || bool.Parse(v);
+    }
+
     public SemaphorePriorityOdds GetStreamingPriority()
     {
         var stringValue = StringUtil.EmptyToNull(GetConfigValue("usenet.streaming-priority"));

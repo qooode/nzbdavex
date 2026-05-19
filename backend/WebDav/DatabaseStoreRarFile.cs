@@ -37,11 +37,20 @@ public class DatabaseStoreRarFile(
 
     private DavMultipartFileStream GetStream(DavRarFile rarFile)
     {
+        // Legacy DavRarFile records are always fully resolved (no lazy
+        // PendingParts), so we wrap them in a transient DavMultipartFile
+        // and pass a null resolver.
+        var transient = new DavMultipartFile
+        {
+            Id = rarFile.Id,
+            Metadata = rarFile.ToDavMultipartFileMeta(),
+        };
         return new DavMultipartFileStream
         (
-            rarFile.ToDavMultipartFileMeta().FileParts,
+            transient,
             usenetClient,
-            configManager.GetArticleBufferSize()
+            configManager.GetArticleBufferSize(),
+            resolver: null
         );
     }
 }

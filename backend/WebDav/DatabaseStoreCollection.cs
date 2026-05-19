@@ -8,6 +8,7 @@ using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
 using NzbWebDAV.Extensions;
 using NzbWebDAV.Queue;
+using NzbWebDAV.Services;
 using NzbWebDAV.WebDav.Base;
 using NzbWebDAV.WebDav.Requests;
 using NzbWebDAV.Websocket;
@@ -21,7 +22,8 @@ public class DatabaseStoreCollection(
     ConfigManager configManager,
     UsenetStreamingClient usenetClient,
     QueueManager queueManager,
-    WebsocketManager websocketManager
+    WebsocketManager websocketManager,
+    LazyRarResolver lazyRarResolver
 ) : BaseStoreReadonlyCollection
 {
     public override string Name => davDirectory.Name;
@@ -154,13 +156,14 @@ public class DatabaseStoreCollection(
         {
             DavItem.ItemSubType.IdsRoot =>
                 new DatabaseStoreIdsCollection(
-                    davItem.Name, "", httpContext, dbClient, usenetClient, configManager),
+                    davItem.Name, "", httpContext, dbClient, usenetClient, configManager, lazyRarResolver),
             DavItem.ItemSubType.NzbsRoot =>
                 new DatabaseStoreWatchFolder(
                     davItem, httpContext, dbClient, configManager, usenetClient, queueManager, websocketManager),
             DavItem.ItemSubType.Directory or DavItem.ItemSubType.ContentRoot  =>
                 new DatabaseStoreCollection(
-                    davItem, httpContext, dbClient, configManager, usenetClient, queueManager, websocketManager),
+                    davItem, httpContext, dbClient, configManager, usenetClient, queueManager, websocketManager,
+                    lazyRarResolver),
             DavItem.ItemSubType.SymlinkRoot =>
                 new DatabaseStoreSymlinkCollection(
                     davItem, dbClient, configManager),
@@ -172,7 +175,7 @@ public class DatabaseStoreCollection(
                     davItem, httpContext, dbClient, usenetClient, configManager),
             DavItem.ItemSubType.MultipartFile =>
                 new DatabaseStoreMultipartFile(
-                    davItem, httpContext, dbClient, usenetClient, configManager),
+                    davItem, httpContext, dbClient, usenetClient, configManager, lazyRarResolver),
             _ => throw new ArgumentException("Unrecognized directory child type.")
         };
     }

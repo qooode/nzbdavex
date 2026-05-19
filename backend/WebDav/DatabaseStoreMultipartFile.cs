@@ -4,6 +4,7 @@ using NzbWebDAV.Clients.Usenet;
 using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
+using NzbWebDAV.Services;
 using NzbWebDAV.Streams;
 using NzbWebDAV.WebDav.Base;
 
@@ -14,7 +15,8 @@ public class DatabaseStoreMultipartFile(
     HttpContext httpContext,
     DavDatabaseClient dbClient,
     UsenetStreamingClient usenetClient,
-    ConfigManager configManager
+    ConfigManager configManager,
+    LazyRarResolver lazyRarResolver
 ) : BaseStoreStreamFile(httpContext)
 {
     public DavItem DavItem => davMultipartFile;
@@ -38,9 +40,10 @@ public class DatabaseStoreMultipartFile(
     private Stream GetStream(DavMultipartFile multipartFile)
     {
         var packedStream = new DavMultipartFileStream(
-            multipartFile.Metadata.FileParts,
+            multipartFile,
             usenetClient,
-            configManager.GetArticleBufferSize()
+            configManager.GetArticleBufferSize(),
+            lazyRarResolver
         );
 
         return multipartFile.Metadata.AesParams != null

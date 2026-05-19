@@ -142,8 +142,23 @@ public class QueueItemProcessor(
         var fileInfos = GetFileInfosStep.GetFileInfos(
             segments, par2FileDescriptors);
 
-        // step 2 -- perform file processing
-        var fileProcessors = GetFileProcessors(fileInfos, archivePassword).ToList();
+        // step 2a -- try altmount-style lazy RAR mounting for the rar group
+        // when enabled. On success, the entire rar group is handled here
+        // (only the first volume gets parsed) and skipped in step 2b. On
+        // ineligibility — multi-file, compressed, solid, or first-volume
+        // parse failure — fall through to the per-part eager pipeline.
+        LazyRarProcessor.Result? lazyRarResult = null;
+        var rarFiles = fileInfos.Where(x => GetGroupName(x) == "rar").ToList();
+        if (configManager.IsLazyRarParsingEnabled() && rarFiles.Count > 0)
+        {
+            var lazyProc = new LazyRarProcessor(rarFiles, usenetClient, archivePassword, ct);
+            lazyRarResult = await lazyProc.ProcessAsync().ConfigureAwait(false) as LazyRarProcessor.Result;
+        }
+
+        // step 2b -- per-file processing for everything else (and for the
+        // rar group when lazy mounting was skipped or unsupported).
+        var skipRarGroup = lazyRarResult is not null;
+        var fileProcessors = GetFileProcessors(fileInfos, archivePassword, skipRarGroup).ToList();
         var part2Progress = progress
             .Offset(50)
             .Scale(50, 100)
@@ -156,6 +171,7 @@ public class QueueItemProcessor(
             .Where(x => x is not null)
             .Select(x => x!)
             .ToList();
+        if (lazyRarResult is not null) fileProcessingResults.Add(lazyRarResult);
 
         // step 3 -- Optionally check full article existence
         var checkedFullHealth = false;
@@ -209,11 +225,12 @@ public class QueueItemProcessor(
     private IEnumerable<BaseProcessor> GetFileProcessors
     (
         List<GetFileInfosStep.FileInfo> fileInfos,
-        string? archivePassword
+        string? archivePassword,
+        bool skipRarGroup = false
     )
     {
         var groups = fileInfos
-            .GroupBy(GetGroup);
+            .GroupBy(GetGroupName);
 
         foreach (var group in groups)
         {
@@ -221,8 +238,11 @@ public class QueueItemProcessor(
                 yield return new SevenZipProcessor(group.ToList(), usenetClient, configManager, archivePassword, ct);
 
             else if (group.Key == "rar")
+            {
+                if (skipRarGroup) continue;
                 foreach (var fileInfo in group)
                     yield return new RarProcessor(fileInfo, usenetClient, archivePassword, ct);
+            }
 
             else if (group.Key == "multipart-mkv")
                 yield return new MultipartMkvProcessor(group.ToList(), usenetClient, ct);
@@ -231,15 +251,13 @@ public class QueueItemProcessor(
                 foreach (var fileInfo in group)
                     yield return new FileProcessor(fileInfo, usenetClient, ct);
         }
-
-        yield break;
-
-        string GetGroup(GetFileInfosStep.FileInfo x) => false ? "impossible"
-            : FilenameUtil.Is7zFile(x.FileName) ? "7z"
-            : x.IsRar || FilenameUtil.IsRarFile(x.FileName) ? "rar"
-            : FilenameUtil.IsMultipartMkv(x.FileName) ? "multipart-mkv"
-            : "other";
     }
+
+    private static string GetGroupName(GetFileInfosStep.FileInfo x) =>
+        FilenameUtil.Is7zFile(x.FileName) ? "7z"
+        : x.IsRar || FilenameUtil.IsRarFile(x.FileName) ? "rar"
+        : FilenameUtil.IsMultipartMkv(x.FileName) ? "multipart-mkv"
+        : "other";
 
     private async Task<DavItem?> GetMountFolder()
     {

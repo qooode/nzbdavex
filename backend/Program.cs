@@ -110,6 +110,7 @@ class Program
             .AddSingleton<ActiveReadRegistry>()
             .AddSingleton<QueueItemSourceTracker>()
             .AddSingleton<UsenetStreamingClient>()
+            .AddSingleton<NzbWebDAV.Services.LazyRarResolver>()
             .AddSingleton<QueueManager>()
             .AddSingleton<NzbResolutionCache>()
             .AddSingleton<CandidateNegativeCache>()
