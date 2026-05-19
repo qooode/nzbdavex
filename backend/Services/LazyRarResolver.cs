@@ -1,12 +1,11 @@
 using System.Collections.Concurrent;
 using NzbWebDAV.Clients.Usenet;
+using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
-using NzbWebDAV.Extensions;
 using NzbWebDAV.Models;
 using NzbWebDAV.Utils;
 using Serilog;
-using SharpCompress.Common.Rar.Headers;
 
 namespace NzbWebDAV.Services;
 
@@ -14,18 +13,19 @@ namespace NzbWebDAV.Services;
 // First reader to need part N pays the cost (~1 segment fetch + parse);
 // subsequent readers reuse the resolved FilePart. The whole resolved
 // archive is written back to the blob-store so restarts also reuse it.
-public class LazyRarResolver(UsenetStreamingClient usenetClient)
+public class LazyRarResolver(UsenetStreamingClient usenetClient, ConfigManager configManager)
 {
-    // Coalesces concurrent resolution requests for the same (file, slot).
-    // Key is (DavMultipartFile.Id, absolute index in the inner file's part
-    // sequence). Entries are dropped once resolution completes; future
-    // readers see the resolved FilePart in FileParts and never re-key here.
-    private readonly ConcurrentDictionary<(Guid, int), Task<DavMultipartFile.FilePart>> _inFlight = new();
+    // Coalesces concurrent resolution requests for the same volume.
+    // Keyed by the volume's first segment ID so two readers asking for the
+    // same trailing part share one parse, even if they hit different
+    // FileParts.Length snapshots (which the old (Guid,int) key broke).
+    private readonly ConcurrentDictionary<(Guid, string), Task<DavMultipartFile.FilePart>> _inFlight = new();
 
-    // Resolve PendingParts until either the cumulative inner-file byte
-    // coverage strictly exceeds targetByteOffset or there's nothing left to
-    // resolve. Returns the latest Meta — callers should discard their old
-    // reference and read PartArray off this return value.
+    // Resolve enough trailing volumes to cover targetByteOffset and return
+    // the updated Meta. All needed volumes run in parallel (capped by
+    // MaxDownloadConnections) — critical for the end-of-file metadata read
+    // a player issues on open, which otherwise serializes one volume at a
+    // time and stalls playback for seconds.
     public async Task<DavMultipartFile.Meta> EnsureResolvedThroughAsync(
         DavMultipartFile mpf,
         long targetByteOffset,
@@ -36,44 +36,83 @@ public class LazyRarResolver(UsenetStreamingClient usenetClient)
 
         // Old MemoryPack blobs may deserialize PendingParts as null despite
         // the property initializer; treat that as "nothing to resolve".
-        while ((meta.PendingParts?.Length ?? 0) > 0)
+        var pending = meta.PendingParts ?? [];
+        if (pending.Length == 0) return meta;
+
+        var resolvedBytes = SumResolvedBytes(meta);
+        if (resolvedBytes > targetByteOffset) return meta;
+
+        // Decide how many trailing parts to resolve based on estimates. The
+        // estimates are adjusted at import time so cumulative sums match the
+        // true file length, which makes this count an exact upper bound.
+        var count = 0;
+        var runningTotal = resolvedBytes;
+        foreach (var p in pending)
         {
-            var resolvedBytes = SumResolvedBytes(meta);
-            if (resolvedBytes > targetByteOffset) break;
-            meta = await ResolveNextAsync(mpf, ct).ConfigureAwait(false);
+            count++;
+            runningTotal += p.EstimatedDataSize;
+            if (runningTotal > targetByteOffset) break;
         }
 
-        return meta;
+        var partsToResolve = new DavMultipartFile.PendingPart[count];
+        Array.Copy(pending, partsToResolve, count);
+
+        // Run resolutions in parallel, bounded by the provider plan limit.
+        // Use the same cap that governs the rest of the queue processor so
+        // we never burst past what the user's provider plan allows.
+        var maxConcurrency = Math.Max(1, configManager.GetMaxDownloadConnections());
+        using var semaphore = new SemaphoreSlim(maxConcurrency);
+
+        var resolveTasks = partsToResolve.Select(async part =>
+        {
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return await GetOrStartResolutionAsync(mpf, part, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }).ToArray();
+
+        var resolveds = await Task.WhenAll(resolveTasks).ConfigureAwait(false);
+        return CommitResolvedBatch(mpf, resolveds);
     }
 
-    // Resolve PendingParts[0] (if any) and merge it into FileParts.
+    // Convenience for the sequential read path (DavMultipartFileStream
+    // crossing a single volume boundary during playback). Resolves just one
+    // part — enough to keep the iterator advancing.
     public async Task<DavMultipartFile.Meta> ResolveNextAsync(
         DavMultipartFile mpf,
         CancellationToken ct)
     {
         var meta = mpf.Metadata;
-        if (!meta.IsLazy || (meta.PendingParts?.Length ?? 0) == 0) return meta;
+        var pending = meta.PendingParts ?? [];
+        if (!meta.IsLazy || pending.Length == 0) return meta;
 
-        var resolved = await GetOrStartResolutionAsync(mpf, ct).ConfigureAwait(false);
-        return CommitResolved(mpf, resolved);
+        var resolved = await GetOrStartResolutionAsync(mpf, pending[0], ct).ConfigureAwait(false);
+        return CommitResolvedBatch(mpf, [resolved]);
     }
 
-    // Coalesce by absolute part index. Concurrent callers crossing the same
-    // volume boundary share one resolution; later callers (after commit)
-    // get a different absolute index since FileParts has grown.
+    // Coalesce by the part's first segment ID. Two concurrent readers
+    // asking for the same volume share one resolution regardless of where
+    // it currently sits in PendingParts.
     private Task<DavMultipartFile.FilePart> GetOrStartResolutionAsync(
         DavMultipartFile mpf,
+        DavMultipartFile.PendingPart pending,
         CancellationToken callerCt)
     {
-        var key = (mpf.Id, mpf.Metadata.FileParts?.Length ?? 0);
+        var firstSeg = pending.SegmentIds.Length > 0 ? pending.SegmentIds[0] : "";
+        var key = (mpf.Id, firstSeg);
 
-        // Use CancellationToken.None for the shared work so one caller
-        // bailing out doesn't kill resolution for others waiting on it.
+        // CancellationToken.None for the shared work so one caller bailing
+        // out doesn't kill resolution for others waiting on it.
         var shared = _inFlight.GetOrAdd(key, k =>
         {
-            var task = DoResolveAsync(mpf, CancellationToken.None);
+            var task = DoResolveAsync(mpf, pending, CancellationToken.None);
             // Drop the entry once done so the dictionary doesn't grow
-            // unbounded; the result is captured in FileParts anyway.
+            // unbounded; the result lives in FileParts after commit.
             _ = task.ContinueWith(t => _inFlight.TryRemove(k, out _),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
@@ -86,13 +125,10 @@ public class LazyRarResolver(UsenetStreamingClient usenetClient)
 
     private async Task<DavMultipartFile.FilePart> DoResolveAsync(
         DavMultipartFile mpf,
+        DavMultipartFile.PendingPart pending,
         CancellationToken ct)
     {
         var meta = mpf.Metadata;
-        var pendingParts = meta.PendingParts ?? [];
-        if (pendingParts.Length == 0)
-            throw new InvalidOperationException("Lazy RAR resolution called with no pending parts.");
-        var pending = pendingParts[0];
         var pathInArchive = meta.PathInArchive
             ?? throw new InvalidOperationException("Lazy RAR meta missing PathInArchive.");
 
@@ -122,31 +158,55 @@ public class LazyRarResolver(UsenetStreamingClient usenetClient)
         };
     }
 
-    // Atomically appends `resolved` to FileParts and pops PendingParts[0].
-    // Persists fire-and-forget — a failed write only costs us a re-resolve
-    // after restart, never inconsistency.
-    private DavMultipartFile.Meta CommitResolved(DavMultipartFile mpf, DavMultipartFile.FilePart resolved)
+    // Atomically appends consecutive resolveds that match the head of
+    // PendingParts. Race-safe: another reader's concurrent commit may have
+    // already moved some/all of our resolveds across, in which case we
+    // skip them silently. Persists fire-and-forget — a failed write only
+    // costs us a re-resolve after restart.
+    private DavMultipartFile.Meta CommitResolvedBatch(DavMultipartFile mpf, DavMultipartFile.FilePart[] resolveds)
     {
+        if (resolveds.Length == 0) return mpf.Metadata;
+
         lock (mpf)
         {
             var meta = mpf.Metadata;
             var fileParts = meta.FileParts ?? [];
             var pendingParts = meta.PendingParts ?? [];
 
-            // Another commit may have already moved this part across; bail
-            // if the head of the pending queue no longer matches.
-            if (pendingParts.Length == 0
-                || !pendingParts[0].SegmentIds.SequenceEqual(resolved.SegmentIds))
+            // Find where our batch lines up with the current pending head.
+            // A concurrent commit may have already advanced past the leading
+            // resolveds; skip them and start matching from wherever the
+            // current pending[0] is in our batch.
+            var startIdx = 0;
+            while (startIdx < resolveds.Length)
             {
-                return meta;
+                if (pendingParts.Length > 0
+                    && pendingParts[0].SegmentIds.SequenceEqual(resolveds[startIdx].SegmentIds))
+                {
+                    break;
+                }
+                startIdx++;
             }
 
-            var newParts = new DavMultipartFile.FilePart[fileParts.Length + 1];
-            Array.Copy(fileParts, newParts, fileParts.Length);
-            newParts[^1] = resolved;
+            // Match consecutive resolveds against consecutive pending head.
+            var matchedCount = 0;
+            while (startIdx + matchedCount < resolveds.Length
+                   && matchedCount < pendingParts.Length
+                   && pendingParts[matchedCount].SegmentIds
+                       .SequenceEqual(resolveds[startIdx + matchedCount].SegmentIds))
+            {
+                matchedCount++;
+            }
 
-            var newPending = new DavMultipartFile.PendingPart[pendingParts.Length - 1];
-            Array.Copy(pendingParts, 1, newPending, 0, newPending.Length);
+            if (matchedCount == 0) return meta;
+
+            var newParts = new DavMultipartFile.FilePart[fileParts.Length + matchedCount];
+            Array.Copy(fileParts, newParts, fileParts.Length);
+            for (var i = 0; i < matchedCount; i++)
+                newParts[fileParts.Length + i] = resolveds[startIdx + i];
+
+            var newPending = new DavMultipartFile.PendingPart[pendingParts.Length - matchedCount];
+            Array.Copy(pendingParts, matchedCount, newPending, 0, newPending.Length);
 
             var newMeta = new DavMultipartFile.Meta
             {
