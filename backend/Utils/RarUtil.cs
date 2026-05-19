@@ -60,6 +60,49 @@ public static class RarUtil
         }
     }
 
+    // Reads headers from the start of a RAR volume and stops as soon as the
+    // first file header is yielded. Same motivation as FindFirstFileHeaderAsync
+    // — never let SharpCompress seek past file data, because that triggers
+    // NzbFileStream's InterpolationSearch (~7 STATs). Returned list typically
+    // contains [archive_header, file_header]; callers use the archive header
+    // for the IsFirstVolume eligibility check and the file header for
+    // path/size/AES metadata.
+    public static async Task<List<IRarHeader>> ReadHeadersUntilFirstFileAsync
+    (
+        Stream stream,
+        string? password,
+        CancellationToken ct
+    )
+    {
+        await using var cancellableStream = new CancellableStream(stream, ct);
+        return await Task.Run(() => ReadHeadersUntilFirstFile(cancellableStream, password), ct)
+            .ConfigureAwait(false);
+    }
+
+    private static List<IRarHeader> ReadHeadersUntilFirstFile(Stream stream, string? password)
+    {
+        try
+        {
+            var readerOptions = new ReaderOptions { Password = password };
+            var headerFactory = new RarHeaderFactory(StreamingMode.Seekable, readerOptions);
+            var headers = new List<IRarHeader>();
+            foreach (var header in headerFactory.ReadHeaders(stream))
+            {
+                headers.Add(header);
+                if (header.HeaderType != HeaderType.File || header.IsDirectory()) continue;
+                if (header.GetCompressionMethod() != 0)
+                    throw new UnsupportedRarCompressionMethodException(
+                        "Only rar files with compression method m0 are supported.");
+                return headers;
+            }
+            return headers;
+        }
+        catch (Exception e) when (e.TryGetCausingException(out UsenetArticleNotFoundException missingArticleException))
+        {
+            throw missingArticleException;
+        }
+    }
+
     private static List<IRarHeader> GetRarHeaders(Stream stream, string? password)
     {
         try

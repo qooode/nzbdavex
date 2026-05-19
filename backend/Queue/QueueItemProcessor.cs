@@ -151,7 +151,7 @@ public class QueueItemProcessor(
         var rarFiles = fileInfos.Where(x => GetGroupName(x) == "rar").ToList();
         if (configManager.IsLazyRarParsingEnabled() && rarFiles.Count > 0)
         {
-            var lazyProc = new LazyRarProcessor(rarFiles, usenetClient, archivePassword, ct);
+            var lazyProc = new LazyRarProcessor(rarFiles, usenetClient, configManager, archivePassword, ct);
             lazyRarResult = await lazyProc.ProcessAsync().ConfigureAwait(false) as LazyRarProcessor.Result;
         }
 
