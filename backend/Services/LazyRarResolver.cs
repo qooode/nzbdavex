@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using NzbWebDAV.Clients.Usenet;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
+using NzbWebDAV.Extensions;
 using NzbWebDAV.Models;
 using NzbWebDAV.Utils;
 using Serilog;
@@ -68,12 +69,12 @@ public class LazyRarResolver(UsenetStreamingClient usenetClient)
 
         // Use CancellationToken.None for the shared work so one caller
         // bailing out doesn't kill resolution for others waiting on it.
-        var shared = _inFlight.GetOrAdd(key, _ =>
+        var shared = _inFlight.GetOrAdd(key, k =>
         {
             var task = DoResolveAsync(mpf, CancellationToken.None);
             // Drop the entry once done so the dictionary doesn't grow
             // unbounded; the result is captured in FileParts anyway.
-            _ = task.ContinueWith(_ => _inFlight.TryRemove(key, out _),
+            _ = task.ContinueWith(t => _inFlight.TryRemove(k, out _),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
@@ -98,11 +99,15 @@ public class LazyRarResolver(UsenetStreamingClient usenetClient)
         await using var stream = usenetClient.GetFileStream(
             pending.SegmentIds, pending.SegmentIdByteRange.Count, articleBufferSize: 0);
 
-        var headers = await RarUtil.GetRarHeadersAsync(stream, meta.ArchivePassword, ct).ConfigureAwait(false);
-
-        var match = headers
-            .Where(h => h.HeaderType == HeaderType.File && !h.IsDirectory())
-            .FirstOrDefault(h => h.GetFileName() == pathInArchive)
+        // Find-and-stop so SharpCompress never seeks past the matched header.
+        // The seek would force NzbFileStream to fire InterpolationSearch
+        // (~7 STAT calls), which is the main reason naïve full-walk
+        // resolution stalls playback at every volume boundary.
+        var match = await RarUtil.FindFirstFileHeaderAsync(
+            stream,
+            meta.ArchivePassword,
+            h => h.GetFileName() == pathInArchive,
+            ct).ConfigureAwait(false)
             ?? throw new InvalidDataException(
                 $"Lazy RAR resolution: continuation header for '{pathInArchive}' not found in trailing volume.");
 

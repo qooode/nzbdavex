@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using NzbWebDAV.Clients.Usenet;
+using NzbWebDAV.Config;
 using NzbWebDAV.Database.Models;
 using NzbWebDAV.Extensions;
 using NzbWebDAV.Models;
@@ -18,6 +19,7 @@ namespace NzbWebDAV.Queue.FileProcessors;
 public class LazyRarProcessor(
     List<GetFileInfosStep.FileInfo> fileInfos,
     INntpClient usenetClient,
+    ConfigManager configManager,
     string? password,
     CancellationToken ct
 ) : BaseProcessor
@@ -27,6 +29,15 @@ public class LazyRarProcessor(
     // estimates only affect seek targeting before resolution; the lazy
     // resolver overwrites with exact ranges on first read.
     private const int ContinuationHeaderGuess = 80;
+
+    // We dropped the explicit "must be a single-file archive" check because
+    // detecting it required walking past the first file header — which is
+    // the slow seek that dominates first-volume parse cost. This sanity
+    // check replaces it: if the matched file isn't large enough to span
+    // most of the NZB, it's likely a companion file (.nfo, sample, etc.)
+    // sitting in front of the actual video inside a multi-file archive,
+    // so we bail out to let the eager processor pick the right one.
+    private const double InnerFileSizeRatioThreshold = 0.70;
 
     public override async Task<BaseProcessor.Result?> ProcessAsync()
     {
@@ -42,7 +53,12 @@ public class LazyRarProcessor(
         {
             await using var firstStream = usenetClient.GetFileStream(
                 firstInfo.NzbFile, firstFileSize, articleBufferSize: 0);
-            headers = await RarUtil.GetRarHeadersAsync(firstStream, password, ct).ConfigureAwait(false);
+            // Stop as soon as the first file header lands. Walking further
+            // forces SharpCompress to seek past the file data, which on
+            // NzbFileStream triggers InterpolationSearch (~7 STAT calls)
+            // and was the dominant cost of first-volume parse.
+            headers = await RarUtil.ReadHeadersUntilFirstFileAsync(firstStream, password, ct)
+                .ConfigureAwait(false);
         }
         catch (Exception e) when (!e.IsCancellationException())
         {
@@ -66,17 +82,13 @@ public class LazyRarProcessor(
             return null;
         }
 
-        var fileHeaders = headers
-            .Where(h => h.HeaderType == HeaderType.File && !h.IsDirectory())
-            .ToList();
-        if (fileHeaders.Count != 1)
+        var fileHeader = headers.LastOrDefault(h => h.HeaderType == HeaderType.File && !h.IsDirectory());
+        if (fileHeader is null)
         {
-            Log.Information("LazyRarProcessor: {File} contains {Count} inner files, falling back to eager",
-                firstInfo.FileName, fileHeaders.Count);
+            Log.Information("LazyRarProcessor: no file header in {File}, falling back to eager",
+                firstInfo.FileName);
             return null;
         }
-
-        var fileHeader = fileHeaders[0];
         if (fileHeader.GetCompressionMethod() != 0)
         {
             Log.Information("LazyRarProcessor: {File} uses compression, falling back to eager",
@@ -92,6 +104,23 @@ public class LazyRarProcessor(
         var pathInArchive = fileHeader.GetFileName();
         var aesParams = fileHeader.GetAesParams(password);
         var totalFileSize = aesParams?.DecodedSize ?? fileHeader.GetUncompressedSize();
+
+        // Inner-file-vs-NZB-size sanity check (replaces the dropped
+        // multi-file count check). Only compares when we have PAR2 sizes
+        // for every part; otherwise the comparison is unreliable.
+        if (sorted.All(x => x.FileSize.HasValue))
+        {
+            var totalNzbSize = sorted.Sum(x => x.FileSize!.Value);
+            if (totalNzbSize > 0 && totalFileSize < totalNzbSize * InnerFileSizeRatioThreshold)
+            {
+                Log.Information(
+                    "LazyRarProcessor: {File} inner file {Inner} bytes is <{Ratio:P0} of NZB {Total}, " +
+                    "likely a companion file in a multi-file archive — falling back to eager",
+                    firstInfo.FileName, totalFileSize, InnerFileSizeRatioThreshold, totalNzbSize);
+                return null;
+            }
+        }
+
         var firstPartByteRange = LongRange.FromStartAndSize(
             fileHeader.GetDataStartPosition(),
             fileHeader.GetAdditionalDataSize()
@@ -104,25 +133,30 @@ public class LazyRarProcessor(
             FilePartByteRange = firstPartByteRange,
         };
 
-        var pending = new List<DavMultipartFile.PendingPart>(sorted.Count - 1);
-        var pendingSum = 0L;
-        for (var i = 1; i < sorted.Count; i++)
+        // Fetch sizes for all trailing parts in parallel. Sequential lookup
+        // serialized N STATs (~1.5s for 30 parts at 50ms RTT); concurrent
+        // lookup respects MaxDownloadConnections so we never exceed the
+        // provider's plan limit.
+        var trailingInfos = sorted.Skip(1).ToList();
+        long[] partSizes;
+        try
         {
-            var partInfo = sorted[i];
-            long partSize;
-            try
-            {
-                partSize = partInfo.FileSize
-                    ?? await usenetClient.GetFileSizeAsync(partInfo.NzbFile, ct).ConfigureAwait(false);
-            }
-            catch (Exception e) when (!e.IsCancellationException())
-            {
-                Log.Information(
-                    "LazyRarProcessor: size lookup failed for {File}, falling back to eager: {Msg}",
-                    partInfo.FileName, e.Message);
-                return null;
-            }
+            partSizes = await FetchPartSizesAsync(trailingInfos).ConfigureAwait(false);
+        }
+        catch (Exception e) when (!e.IsCancellationException())
+        {
+            Log.Information(
+                "LazyRarProcessor: size lookup failed for {File}, falling back to eager: {Msg}",
+                firstInfo.FileName, e.Message);
+            return null;
+        }
 
+        var pending = new List<DavMultipartFile.PendingPart>(trailingInfos.Count);
+        var pendingSum = 0L;
+        for (var i = 0; i < trailingInfos.Count; i++)
+        {
+            var partInfo = trailingInfos[i];
+            var partSize = partSizes[i];
             var estimate = Math.Max(0, partSize - ContinuationHeaderGuess);
             pending.Add(new DavMultipartFile.PendingPart
             {
@@ -163,6 +197,28 @@ public class LazyRarProcessor(
             ReleaseDate = firstInfo.ReleaseDate,
             ArchiveName = GetArchiveName(firstInfo.FileName),
         };
+    }
+
+    private async Task<long[]> FetchPartSizesAsync(IReadOnlyList<GetFileInfosStep.FileInfo> infos)
+    {
+        if (infos.Count == 0) return [];
+
+        using var semaphore = new SemaphoreSlim(configManager.GetMaxDownloadConnections());
+        var tasks = infos.Select(async pi =>
+        {
+            if (pi.FileSize.HasValue) return pi.FileSize.Value;
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return await usenetClient.GetFileSizeAsync(pi.NzbFile, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }).ToArray();
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private static string GetArchiveName(string firstFileName)
