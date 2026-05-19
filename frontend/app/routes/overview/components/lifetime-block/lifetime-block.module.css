@@ -49,15 +49,6 @@
     border: 1px solid var(--border-subtle);
 }
 
-.accent {
-    background: linear-gradient(135deg, var(--bg-surface), color-mix(in srgb, var(--accent, #6aa9ff) 12%, var(--bg-surface)));
-    border-color: color-mix(in srgb, var(--accent, #6aa9ff) 30%, var(--border-subtle));
-}
-
-.full {
-    grid-column: 1 / -1;
-}
-
 .label {
     font-size: 10px;
     color: var(--text-muted);

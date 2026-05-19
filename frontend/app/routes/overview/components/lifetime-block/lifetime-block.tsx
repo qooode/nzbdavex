@@ -26,7 +26,7 @@ export function LifetimeBlock({ lifetime }: LifetimeBlockProps) {
                 <div className={styles.empty}>Lifetime totals appear after your first reads.</div>
             ) : (
                 <div className={styles.grid}>
-                    <Tile label="Read" value={formatBytes(lifetime.bytesRead)} accent />
+                    <Tile label="Read" value={formatBytes(lifetime.bytesRead)} />
                     <Tile label="Articles" value={formatNumber(lifetime.articles)} />
                     <Tile label="Read sessions" value={formatNumber(lifetime.readSessions)} />
                     <Tile label="Active-reads time" value={formatHours(lifetime.readSeconds)} />
@@ -36,9 +36,9 @@ export function LifetimeBlock({ lifetime }: LifetimeBlockProps) {
     );
 }
 
-function Tile({ label, value, accent }: { label: string, value: string, accent?: boolean }) {
+function Tile({ label, value }: { label: string, value: string }) {
     return (
-        <div className={`${styles.cell} ${accent ? styles.accent : ""}`}>
+        <div className={styles.cell}>
             <div className={styles.label}>{label}</div>
             <div className={styles.value}>{value}</div>
         </div>
