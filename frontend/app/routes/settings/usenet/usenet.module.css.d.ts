@@ -54,6 +54,28 @@ declare const styles: {
   readonly "input": string;
   readonly "justify-right": string;
   readonly "test-connection-button": string;
+  readonly "toggle": string;
+  readonly "toggle-on": string;
+  readonly "toggle-off": string;
+  readonly "provider-disabled-badge": string;
+  readonly "provider-card-disabled": string;
+  readonly "form-paired-input": string;
+  readonly "form-hint": string;
+  readonly "usage-row": string;
+  readonly "usage-header": string;
+  readonly "usage-label": string;
+  readonly "usage-value-ok": string;
+  readonly "usage-value-warn": string;
+  readonly "usage-value-danger": string;
+  readonly "usage-value-neutral": string;
+  readonly "usage-reset": string;
+  readonly "usage-bar-track": string;
+  readonly "usage-bar-fill": string;
+  readonly "usage-bar-ok": string;
+  readonly "usage-bar-warn": string;
+  readonly "usage-bar-danger": string;
+  readonly "usage-bar-neutral": string;
+  readonly "usage-warning": string;
 };
 export = styles;
 

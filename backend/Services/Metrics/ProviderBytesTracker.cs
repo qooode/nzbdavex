@@ -34,6 +34,25 @@ public sealed class ProviderBytesTracker
     public IReadOnlyDictionary<string, long> LifetimeByHost => _lifetime;
 
     /// <summary>
+    /// Overwrites the in-memory lifetime counter for a host. Used at startup to
+    /// hydrate from ProviderHourly and after a counter reset to drop back to
+    /// zero. Does not touch <see cref="LifetimeAll"/> since that reflects the
+    /// total bytes observed by this process; rewriting it on every config
+    /// change would make the overview tile jump around for unrelated reasons.
+    /// </summary>
+    public void SetLifetime(string host, long bytes)
+    {
+        if (string.IsNullOrEmpty(host)) return;
+        _lifetime[host] = Math.Max(0, bytes);
+    }
+
+    public long GetLifetime(string host)
+    {
+        if (string.IsNullOrEmpty(host)) return 0;
+        return _lifetime.TryGetValue(host, out var v) ? v : 0;
+    }
+
+    /// <summary>
     /// Pop all buckets whose minute is strictly older than <paramref name="cutoffMinute"/>.
     /// Returned in stable order so callers can apply them transactionally.
     /// </summary>

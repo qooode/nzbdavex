@@ -263,6 +263,7 @@ public class MultiProviderNntpClient(
     {
         var enabled = providers
             .Where(x => x.ProviderType != ProviderType.Disabled)
+            .Where(x => !IsOverLimit(x))
             .OrderBy(x => x.ProviderType)
             .ThenByDescending(x => x.AvailableConnections)
             .ToList();
@@ -270,7 +271,17 @@ public class MultiProviderNntpClient(
         var healthy = enabled.Where(x => !x.IsTripped).ToList();
 
         // Always return at least one provider so cooldown probes can fire.
+        // Note we intentionally do NOT relax the over-limit filter here:
+        // exhausting a paid block must be a hard stop, not a soft preference.
         return healthy.Count > 0 ? healthy : enabled;
+    }
+
+    private bool IsOverLimit(MultiConnectionNntpClient client)
+    {
+        var limit = client.ByteLimit;
+        if (bytesTracker == null || !limit.HasValue || limit.Value <= 0) return false;
+        var used = bytesTracker.GetLifetime(client.Host) + client.BytesUsedOffset;
+        return used >= limit.Value;
     }
 
     public override void Dispose()

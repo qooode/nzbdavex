@@ -26,11 +26,17 @@ public class MultiConnectionNntpClient(
     ConnectionPool<INntpClient> connectionPool,
     ProviderType type,
     ProviderCircuitBreaker circuitBreaker,
-    string host
+    string host,
+    long? byteLimit,
+    long bytesUsedOffset
 ) : NntpClient
 {
     public ProviderType ProviderType { get; } = type;
     public string Host { get; } = host;
+    // null or non-positive = uncapped. Routing reads these to decide whether
+    // this provider should be skipped when it has exhausted its block.
+    public long? ByteLimit { get; } = byteLimit;
+    public long BytesUsedOffset { get; } = bytesUsedOffset;
     public bool IsTripped => circuitBreaker.IsTripped;
     public int LiveConnections => connectionPool.LiveConnections;
     public int IdleConnections => connectionPool.IdleConnections;

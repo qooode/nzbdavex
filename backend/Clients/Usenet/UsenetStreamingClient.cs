@@ -51,6 +51,13 @@ public class UsenetStreamingClient : WrappingNntpClient
     )
     {
         var providerConfig = configManager.GetUsenetProviderConfig();
+        // Seed the tracker from the persisted metrics rollup so the limit gate
+        // is accurate before the first article fetch. Fire-and-forget — the
+        // helper logs and swallows DB errors so a metrics outage can't keep
+        // the streaming client from coming up. Limit enforcement degrades
+        // gracefully to "uncapped until seed completes".
+        _ = ProviderUsageHelper.SeedTrackerAsync(bytesTracker, providerConfig);
+
         var connectionPoolStats = new ConnectionPoolStats(providerConfig, websocketManager);
         var providerClients = providerConfig.Providers
             .Select((provider, index) => CreateProviderClient(
@@ -73,7 +80,14 @@ public class UsenetStreamingClient : WrappingNntpClient
             onConnectionPoolChanged
         );
         var circuitBreaker = new ProviderCircuitBreaker(connectionDetails.Host);
-        return new MultiConnectionNntpClient(connectionPool, connectionDetails.Type, circuitBreaker, connectionDetails.Host);
+        return new MultiConnectionNntpClient(
+            connectionPool,
+            connectionDetails.Type,
+            circuitBreaker,
+            connectionDetails.Host,
+            connectionDetails.ByteLimit,
+            connectionDetails.BytesUsedOffset
+        );
     }
 
     private static ConnectionPool<INntpClient> CreateNewConnectionPool

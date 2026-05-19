@@ -466,6 +466,121 @@
     color: var(--text-faint);
 }
 
+.form-paired-input {
+    display: grid;
+    grid-template-columns: 1fr 100px;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.form-hint {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.usage-row {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.usage-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.usage-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+}
+
+.usage-value-ok,
+.usage-value-warn,
+.usage-value-danger,
+.usage-value-neutral {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.usage-value-warn {
+    color: #f59e0b;
+}
+
+.usage-value-danger {
+    color: var(--danger-muted, #ef4444);
+}
+
+.usage-reset {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.usage-reset:hover {
+    background: var(--bg-surface-2);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+}
+
+.usage-bar-track {
+    position: relative;
+    height: 6px;
+    width: 100%;
+    background: var(--bg-surface-2);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.usage-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 200ms ease;
+}
+
+.usage-bar-ok {
+    background: linear-gradient(90deg, #22c55e, #34d399);
+}
+
+.usage-bar-warn {
+    background: linear-gradient(90deg, #eab308, #f59e0b);
+}
+
+.usage-bar-danger {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+.usage-bar-neutral {
+    background: var(--text-muted);
+}
+
+.usage-warning {
+    font-size: 11px;
+    color: var(--danger-muted, #ef4444);
+    line-height: 1.4;
+}
+
 @media (max-width: 600px) {
     .form-grid {
         grid-template-columns: 1fr;

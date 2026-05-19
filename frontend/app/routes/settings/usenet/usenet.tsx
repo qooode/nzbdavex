@@ -4,6 +4,7 @@ import { Button } from "react-bootstrap";
 import { receiveMessage } from "~/utils/websocket-util";
 
 const usenetConnectionsTopic = {'cxs': 'state'};
+const USAGE_POLL_INTERVAL_MS = 10_000;
 
 type UsenetSettingsProps = {
     config: Record<string, string>
@@ -26,7 +27,58 @@ type ConnectionDetails = {
     Pass: string;
     MaxConnections: number;
     PreviousType?: ProviderType;
+    // null/0 = uncapped. Stored as bytes; the modal lets the user type a
+    // friendlier MB/GB/TB value that gets converted on save.
+    ByteLimit?: number | null;
+    // Counter adjustment, used for "initial used" on a freshly added block
+    // and zeroed on reset. Bytes.
+    BytesUsedOffset?: number;
+    // unix-ms cutoff. Hourly rows older than this are excluded from the live
+    // usage gauge. A reset bumps this to Date.now().
+    BytesUsedResetAt?: number;
 };
+
+type ProviderUsage = {
+    Index: number;
+    Host: string;
+    BytesUsed: number;
+    ByteLimit: number | null;
+    OverLimit: boolean;
+};
+
+const BYTE_UNITS = [
+    { label: "MB", multiplier: 1_000_000 },
+    { label: "GB", multiplier: 1_000_000_000 },
+    { label: "TB", multiplier: 1_000_000_000_000 },
+] as const;
+type ByteUnitLabel = typeof BYTE_UNITS[number]["label"];
+
+function bytesToValueAndUnit(bytes: number | null | undefined): { value: string; unit: ByteUnitLabel } {
+    if (!bytes || bytes <= 0) return { value: "", unit: "GB" };
+    // Pick the largest unit that keeps the number readable (>= 1).
+    const choice = [...BYTE_UNITS].reverse().find(u => bytes >= u.multiplier) ?? BYTE_UNITS[1];
+    const v = bytes / choice.multiplier;
+    // Trim trailing zeros so "500" doesn't display as "500.000".
+    return { value: Number(v.toFixed(3)).toString(), unit: choice.label };
+}
+
+function valueAndUnitToBytes(value: string, unit: ByteUnitLabel): number | null {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed);
+    if (!isFinite(n) || n <= 0) return null;
+    const u = BYTE_UNITS.find(x => x.label === unit) ?? BYTE_UNITS[1];
+    return Math.round(n * u.multiplier);
+}
+
+function formatBytes(bytes: number): string {
+    if (!isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let i = 0;
+    let v = bytes;
+    while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
+    return v >= 100 ? `${v.toFixed(0)} ${units[i]}` : `${v.toFixed(1)} ${units[i]}`;
+}
 
 type ConnectionCounts = {
     live: number;
@@ -65,6 +117,7 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
     const [showModal, setShowModal] = useState(false);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [connections, setConnections] = useState<{[index: number]: ConnectionCounts}>({});
+    const [usage, setUsage] = useState<{[index: number]: ProviderUsage}>({});
     const providerConfig = useMemo(() => parseProviderConfig(config["usenet.providers"]), [config]);
 
     // handlers
@@ -91,6 +144,20 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
         const updated: ConnectionDetails = isDisabled
             ? { ...current, Type: current.PreviousType ?? ProviderType.Pooled, PreviousType: undefined }
             : { ...current, Type: ProviderType.Disabled, PreviousType: current.Type };
+        const newProviderConfig = { ...providerConfig };
+        newProviderConfig.Providers = providerConfig.Providers.map((p, i) => i === index ? updated : p);
+        setNewConfig({ ...config, "usenet.providers": serializeProviderConfig(newProviderConfig) });
+    }, [config, providerConfig, setNewConfig]);
+
+    const handleResetUsage = useCallback((index: number) => {
+        const current = providerConfig.Providers[index];
+        if (!current) return;
+        if (!confirm(`Reset bytes-used counter for "${current.Host}" to zero?\n\nThis only rewinds the gauge for this provider's data cap — historical metrics and graphs are untouched. Takes effect after you save settings.`)) return;
+        const updated: ConnectionDetails = {
+            ...current,
+            BytesUsedOffset: 0,
+            BytesUsedResetAt: Date.now(),
+        };
         const newProviderConfig = { ...providerConfig };
         newProviderConfig.Providers = providerConfig.Providers.map((p, i) => i === index ? updated : p);
         setNewConfig({ ...config, "usenet.providers": serializeProviderConfig(newProviderConfig) });
@@ -142,6 +209,31 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
         }
         return connect();
     }, [setConnections, handleConnectionsMessage]);
+
+    // Poll provider usage. Backend computes "bytes since reset + offset" from
+    // the persisted hourly rollup plus the in-memory tracker; cheap enough to
+    // hit on a 10s tick. We skip while the edit modal is open since the user
+    // may be mid-edit and we don't want the card behind the modal flickering.
+    useEffect(() => {
+        let disposed = false;
+        async function fetchUsage() {
+            try {
+                const response = await fetch('/api/get-provider-usage');
+                if (!response.ok || disposed) return;
+                const data: { providers?: ProviderUsage[] } = await response.json();
+                if (disposed || !data.providers) return;
+                const next: {[index: number]: ProviderUsage} = {};
+                for (const p of data.providers) next[p.Index] = p;
+                setUsage(next);
+            } catch {
+                // network blips are fine — next tick retries.
+            }
+        }
+        fetchUsage();
+        if (showModal) return () => { disposed = true; };
+        const id = setInterval(fetchUsage, USAGE_POLL_INTERVAL_MS);
+        return () => { disposed = true; clearInterval(id); };
+    }, [showModal, providerConfig.Providers.length]);
 
     // view
     return (
@@ -283,6 +375,12 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
                                             </div>
 
                                         </div>
+
+                                        <UsageRow
+                                            provider={provider}
+                                            usage={usage[index]}
+                                            onReset={() => handleResetUsage(index)}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -302,6 +400,64 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
     );
 }
 
+type UsageRowProps = {
+    provider: ConnectionDetails;
+    usage: ProviderUsage | undefined;
+    onReset: () => void;
+};
+
+function UsageRow({ provider, usage, onReset }: UsageRowProps) {
+    const limit = provider.ByteLimit ?? null;
+    const used = usage?.BytesUsed ?? 0;
+    const hasLimit = limit !== null && limit > 0;
+    const pct = hasLimit ? Math.min(100, (used / (limit as number)) * 100) : 0;
+    // Thresholds match the soft-warning levels the backend would alert on if
+    // we wired notifications. Keeping the same numbers here means the colors
+    // tell the same story as any future alert email or webhook.
+    const tone = hasLimit
+        ? (pct >= 100 ? "danger" : pct >= 95 ? "danger" : pct >= 80 ? "warn" : "ok")
+        : "neutral";
+
+    const showAnything = hasLimit || used > 0 || usage !== undefined;
+    if (!showAnything) return null;
+
+    return (
+        <div className={styles["usage-row"]}>
+            <div className={styles["usage-header"]}>
+                <span className={styles["usage-label"]}>
+                    {hasLimit ? "Data Cap" : "Data Used"}
+                </span>
+                <span className={styles[`usage-value-${tone}`]}>
+                    {hasLimit
+                        ? `${formatBytes(used)} / ${formatBytes(limit as number)}  ·  ${pct.toFixed(1)}%`
+                        : formatBytes(used)}
+                </span>
+                <button
+                    type="button"
+                    className={styles["usage-reset"]}
+                    onClick={onReset}
+                    title="Reset the counter to zero (e.g. after buying a new block)"
+                >
+                    Reset
+                </button>
+            </div>
+            {hasLimit && (
+                <div className={styles["usage-bar-track"]}>
+                    <div
+                        className={`${styles["usage-bar-fill"]} ${styles[`usage-bar-${tone}`]}`}
+                        style={{ width: `${pct}%` }}
+                    />
+                </div>
+            )}
+            {usage?.OverLimit && (
+                <div className={styles["usage-warning"]}>
+                    Data cap reached — this provider will be skipped on new fetches.
+                </div>
+            )}
+        </div>
+    );
+}
+
 type ProviderModalProps = {
     show: boolean;
     provider: ConnectionDetails | null;
@@ -310,6 +466,10 @@ type ProviderModalProps = {
 };
 
 function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) {
+    const isEditing = provider !== null;
+    const initialLimit = bytesToValueAndUnit(provider?.ByteLimit);
+    const initialUsed = bytesToValueAndUnit(provider?.BytesUsedOffset);
+
     const [host, setHost] = useState(provider?.Host || "");
     const [port, setPort] = useState(provider?.Port?.toString() || "");
     const [useSsl, setUseSsl] = useState(provider?.UseSsl ?? true);
@@ -317,6 +477,10 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
     const [pass, setPass] = useState(provider?.Pass || "");
     const [maxConnections, setMaxConnections] = useState(provider?.MaxConnections?.toString() || "");
     const [type, setType] = useState<ProviderType>(provider?.Type ?? ProviderType.Pooled);
+    const [limitValue, setLimitValue] = useState(initialLimit.value);
+    const [limitUnit, setLimitUnit] = useState<ByteUnitLabel>(initialLimit.unit);
+    const [initialUsedValue, setInitialUsedValue] = useState(initialUsed.value);
+    const [initialUsedUnit, setInitialUsedUnit] = useState<ByteUnitLabel>(initialUsed.unit);
     const [isTestingConnection, setIsTestingConnection] = useState(false);
     const [connectionTested, setConnectionTested] = useState(false);
     const [testError, setTestError] = useState<string | null>(null);
@@ -324,6 +488,8 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
     // Reset form when modal opens or provider changes
     useEffect(() => {
         if (show) {
+            const lim = bytesToValueAndUnit(provider?.ByteLimit);
+            const used = bytesToValueAndUnit(provider?.BytesUsedOffset);
             setHost(provider?.Host || "");
             setPort(provider?.Port?.toString() || "");
             setUseSsl(provider?.UseSsl ?? true);
@@ -331,6 +497,10 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
             setPass(provider?.Pass || "");
             setMaxConnections(provider?.MaxConnections?.toString() || "");
             setType(provider?.Type ?? ProviderType.Pooled);
+            setLimitValue(lim.value);
+            setLimitUnit(lim.unit);
+            setInitialUsedValue(used.value);
+            setInitialUsedUnit(used.unit);
             setConnectionTested(false);
             setTestError(null);
         }
@@ -386,6 +556,21 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
     }, [host, port, useSsl, user, pass]);
 
     const handleSave = useCallback(() => {
+        const byteLimit = valueAndUnitToBytes(limitValue, limitUnit);
+        const initialUsedBytes = valueAndUnitToBytes(initialUsedValue, initialUsedUnit);
+
+        // On a brand-new provider, an initial-used value also sets ResetAt to
+        // now — otherwise the metrics rollup would count any pre-existing
+        // history for the same hostname twice. On edit, leave ResetAt alone
+        // (the dedicated Reset button is the right surface for that).
+        const isNew = !isEditing;
+        const offsetToPersist = isNew
+            ? (initialUsedBytes ?? 0)
+            : (provider?.BytesUsedOffset ?? 0);
+        const resetAtToPersist = isNew && initialUsedBytes !== null
+            ? Date.now()
+            : (provider?.BytesUsedResetAt ?? 0);
+
         onSave({
             Type: type,
             Host: host,
@@ -395,8 +580,11 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
             Pass: pass,
             MaxConnections: parseInt(maxConnections, 10),
             PreviousType: type === ProviderType.Disabled ? provider?.PreviousType : undefined,
+            ByteLimit: byteLimit,
+            BytesUsedOffset: offsetToPersist,
+            BytesUsedResetAt: resetAtToPersist,
         });
-    }, [type, host, port, useSsl, user, pass, maxConnections, provider, onSave]);
+    }, [type, host, port, useSsl, user, pass, maxConnections, provider, isEditing, limitValue, limitUnit, initialUsedValue, initialUsedUnit, onSave]);
 
     const handleOverlayClick = useCallback((e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
@@ -543,6 +731,64 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
                                 </label>
                             </div>
                         </div>
+
+                        <div className={`${styles["form-group"]} ${styles["full-width"]}`}>
+                            <label className={styles["form-label"]}>
+                                Data Cap (optional)
+                            </label>
+                            <div className={styles["form-paired-input"]}>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className={styles["form-input"]}
+                                    placeholder="Leave blank for no cap"
+                                    value={limitValue}
+                                    onChange={(e) => setLimitValue(e.target.value)}
+                                />
+                                <select
+                                    className={styles["form-select"]}
+                                    value={limitUnit}
+                                    onChange={(e) => setLimitUnit(e.target.value as ByteUnitLabel)}
+                                >
+                                    {BYTE_UNITS.map(u => (
+                                        <option key={u.label} value={u.label}>{u.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className={styles["form-hint"]}>
+                                For block accounts: total bytes you've purchased. The provider stops being used once the counter reaches this value.
+                            </div>
+                        </div>
+
+                        {!isEditing && (
+                            <div className={`${styles["form-group"]} ${styles["full-width"]}`}>
+                                <label className={styles["form-label"]}>
+                                    Already Used (optional)
+                                </label>
+                                <div className={styles["form-paired-input"]}>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        className={styles["form-input"]}
+                                        placeholder="0"
+                                        value={initialUsedValue}
+                                        onChange={(e) => setInitialUsedValue(e.target.value)}
+                                    />
+                                    <select
+                                        className={styles["form-select"]}
+                                        value={initialUsedUnit}
+                                        onChange={(e) => setInitialUsedUnit(e.target.value as ByteUnitLabel)}
+                                    >
+                                        {BYTE_UNITS.map(u => (
+                                            <option key={u.label} value={u.label}>{u.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className={styles["form-hint"]}>
+                                    Seed the counter when migrating a partially-used block from another client. Leave empty for a fresh block.
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {testError && (
