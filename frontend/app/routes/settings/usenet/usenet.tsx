@@ -169,7 +169,7 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
     const handleResetUsage = useCallback((index: number) => {
         const current = providerConfig.Providers[index];
         if (!current) return;
-        if (!confirm(`Reset bytes-used counter for "${current.Host}" to zero?\n\nThis only rewinds the gauge for this provider's data cap — historical metrics and graphs are untouched. Takes effect after you save settings.`)) return;
+        if (!confirm(`Reset bytes-used counter for "${current.Host}" to zero?\n\nThis only rewinds the gauge for this provider's data cap. Historical metrics and graphs are untouched. Takes effect after you save settings.`)) return;
         const updated: ConnectionDetails = {
             ...current,
             BytesUsedOffset: 0,
@@ -473,7 +473,7 @@ function UsageRow({ provider, usage, onReset }: UsageRowProps) {
             )}
             {usage?.overLimit && (
                 <div className={styles["usage-warning"]}>
-                    Data cap reached — this provider is paused to keep in-flight fetches from overshooting. Reset the counter or raise the cap to resume.
+                    Data cap reached. This provider is paused to keep in-flight fetches from overshooting. Reset the counter or raise the cap to resume.
                 </div>
             )}
         </div>
@@ -778,7 +778,7 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
                                 </select>
                             </div>
                             <div className={styles["form-hint"]}>
-                                For block accounts: total bytes you've purchased. The provider auto-pauses at ~95% of this value to absorb in-flight requests, so set the cap to your full block size — the 5% headroom keeps you from overshooting.
+                                For block accounts: total bytes you've purchased. The provider auto-pauses at ~95% of this value to absorb in-flight requests, so set the cap to your full block size. The 5% headroom keeps you from overshooting.
                             </div>
                         </div>
 
