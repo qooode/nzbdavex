@@ -64,6 +64,13 @@ else
     USER_NAME=appuser
 fi
 
+# Fall back to /app/version.txt when no build-arg was provided so the
+# UI footer shows the right version under deploy systems (Coolify, etc.)
+# that don't pass NZBDAV_VERSION at docker-build time.
+if [ -z "${NZBDAV_VERSION}" ] && [ -f /app/version.txt ]; then
+    export NZBDAV_VERSION="$(tr -d '[:space:]' < /app/version.txt)"
+fi
+
 # Set environment variables
 if [ -z "${BACKEND_URL}" ]; then
     export BACKEND_URL="http://localhost:8080"

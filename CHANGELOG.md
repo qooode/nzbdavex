@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/qooode/nzbdavex/compare/v0.6.4...v0.7.0) (2026-05-20)
+
+
+### Features
+
+* lazy RAR mounting. Only parses the first volume at import and defers trailing volumes to first read. Drops click-to-mount from ~5-15s to ~1-2s on typical RAR releases. Toggle via `api.lazy-rar-parsing` (default on); unsupported archives (compressed, solid, multi-file with companion files) automatically fall back to the eager per-part processor. ([18f6a67](https://github.com/qooode/nzbdavex/commit/18f6a674))
+* parallel resolution of trailing RAR volumes during first read, capped at `MaxDownloadConnections`. Avoids the multi-second stall when a player issues its end-of-file metadata request right after opening a video. ([65905cd](https://github.com/qooode/nzbdavex/commit/65905cd3))
+
+
+### Bug Fixes
+
+* skip SharpCompress's seek-past-file-data in lazy resolver, which otherwise fires ~7 InterpolationSearch STATs per volume boundary and stutters playback. ([f04113a](https://github.com/qooode/nzbdavex/commit/f04113a))
+* apply the same early-stop trick to first-volume parse and parallelize pending-part size lookups in `LazyRarProcessor`. ([e9fbac5](https://github.com/qooode/nzbdavex/commit/e9fbac5))
+* keep old `DavMultipartFile` blobs readable by treating missing `PendingParts`/`FileParts` as empty rather than NRE. ([18f6a67](https://github.com/qooode/nzbdavex/commit/18f6a674))
+
 ## [0.6.4](https://github.com/nzbdav-dev/nzbdav/compare/v0.6.3...v0.6.4) (2026-04-08)
 
 
