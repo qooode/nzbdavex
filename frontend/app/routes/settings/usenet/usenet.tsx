@@ -451,7 +451,7 @@ function UsageRow({ provider, usage, onReset }: UsageRowProps) {
             )}
             {usage?.OverLimit && (
                 <div className={styles["usage-warning"]}>
-                    Data cap reached — this provider will be skipped on new fetches.
+                    Data cap reached — this provider is paused to keep in-flight fetches from overshooting. Reset the counter or raise the cap to resume.
                 </div>
             )}
         </div>

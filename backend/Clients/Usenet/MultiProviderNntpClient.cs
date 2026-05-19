@@ -281,7 +281,11 @@ public class MultiProviderNntpClient(
         var limit = client.ByteLimit;
         if (bytesTracker == null || !limit.HasValue || limit.Value <= 0) return false;
         var used = bytesTracker.GetLifetime(client.Host) + client.BytesUsedOffset;
-        return used >= limit.Value;
+        // Stop at the effective cutoff (95% of cap) so in-flight fetches that
+        // already passed this check can't push the actual count past the cap.
+        // See ProviderUsageHelper.EffectiveLimitFraction for the rationale.
+        var effective = (long)(limit.Value * ProviderUsageHelper.EffectiveLimitFraction);
+        return used >= effective;
     }
 
     public override void Dispose()

@@ -24,6 +24,17 @@ namespace NzbWebDAV.Services.Metrics;
 public static class ProviderUsageHelper
 {
     /// <summary>
+    /// Fraction of the configured cap at which the provider is taken out of
+    /// rotation. The headroom absorbs in-flight fetches that already passed
+    /// the per-call check at <see cref="MultiProviderNntpClient"/> startup
+    /// but haven't finished streaming bytes through CountingYencStream yet.
+    /// 0.95 means "stop at 95% so the remaining 5% covers parallel fetches"
+    /// — well above the worst realistic overshoot (MaxConnections × ~1 MB),
+    /// and tiny compared to a typical multi-hundred-GB block.
+    /// </summary>
+    public const double EffectiveLimitFraction = 0.95;
+
+    /// <summary>
     /// Computes raw bytes fetched for one provider since its last reset,
     /// summed from ProviderHourly. The caller adds <see cref="UsenetProviderConfig.ConnectionDetails.BytesUsedOffset"/>
     /// if it wants the user-facing total.
@@ -84,12 +95,14 @@ public static class ProviderUsageHelper
 
     /// <summary>
     /// True when a configured ByteLimit exists and the live counter has caught
-    /// up to or passed it. A ByteLimit of null or 0 means "no cap".
+    /// up to or passed the effective cutoff (configured limit × safety margin).
+    /// A ByteLimit of null or 0 means "no cap".
     /// </summary>
     public static bool IsOverLimit(ProviderBytesTracker tracker, UsenetProviderConfig.ConnectionDetails provider)
     {
         var limit = provider.ByteLimit;
         if (!limit.HasValue || limit.Value <= 0) return false;
-        return ComputeUsage(tracker, provider) >= limit.Value;
+        var effective = (long)(limit.Value * EffectiveLimitFraction);
+        return ComputeUsage(tracker, provider) >= effective;
     }
 }
