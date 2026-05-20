@@ -84,6 +84,11 @@ public class QueueItemProcessor(
         // it to the history as a failed job.
         catch (Exception e)
         {
+            // Surface the underlying exception (with stack) so operators can see
+            // which provider/segment failed. Previously this branch only wrote
+            // e.Message into the HistoryItem and was invisible in container logs.
+            Log.Warning(e, "Queue item {Id} ({JobName}) failed: {Message}",
+                queueItem.Id, queueItem.JobName, e.Message);
             try
             {
                 await MarkQueueItemCompleted(startTime, error: e.Message).ConfigureAwait(false);

@@ -19,6 +19,12 @@ public class ProviderCircuitBreaker
     private static readonly TimeSpan InitialCooldown = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(5);
 
+    // Hard-failure path uses a shorter cooldown so a one-off blip doesn't park
+    // a healthy provider for a full minute. If the provider really is bad, the
+    // next cooldown-probe attempt will fail and the exponential doubling kicks
+    // in — same recovery curve, just starting from a friendlier baseline.
+    private static readonly TimeSpan HardInitialCooldown = TimeSpan.FromSeconds(30);
+
     private readonly string _providerName;
     private readonly object _lock = new();
 
@@ -67,6 +73,40 @@ public class ProviderCircuitBreaker
                 "Provider {Provider} tripped after {Failures} consecutive failures. " +
                 "Skipping for {Cooldown}s.",
                 _providerName, _consecutiveFailures, _currentCooldown.TotalSeconds);
+
+            _currentCooldown = TimeSpan.FromMilliseconds(
+                Math.Min(_currentCooldown.TotalMilliseconds * 2, MaxCooldown.TotalMilliseconds));
+        }
+    }
+
+    /// <summary>
+    /// Trip the breaker immediately, bypassing the consecutive-failure threshold.
+    /// Use this for failure modes where a single observation is strong evidence
+    /// the provider is misbehaving — e.g. a BODY/ARTICLE read-timeout, which
+    /// healthy providers never produce. Avoids paying the same N×timeout cost
+    /// on the very next user request while the provider is still stalled.
+    /// </summary>
+    public void RecordHardFailure(string reason)
+    {
+        lock (_lock)
+        {
+            // Already tripped? Don't extend; let the existing cooldown expire
+            // and the next probe decide. (Avoids hard-failures during the probe
+            // window pushing the cooldown out forever.)
+            if (_trippedUntilMs > 0 && Environment.TickCount64 < _trippedUntilMs)
+                return;
+
+            // Seed the cooldown from the hard baseline if we're entering a
+            // fresh trip; an already-degraded provider (cooldown previously
+            // doubled past the baseline) keeps its larger window.
+            if (_currentCooldown < HardInitialCooldown)
+                _currentCooldown = HardInitialCooldown;
+
+            _consecutiveFailures = Math.Max(_consecutiveFailures + 1, FailureThreshold);
+            _trippedUntilMs = Environment.TickCount64 + (long)_currentCooldown.TotalMilliseconds;
+            Log.Warning(
+                "Provider {Provider} hard-tripped ({Reason}). Skipping for {Cooldown}s.",
+                _providerName, reason, _currentCooldown.TotalSeconds);
 
             _currentCooldown = TimeSpan.FromMilliseconds(
                 Math.Min(_currentCooldown.TotalMilliseconds * 2, MaxCooldown.TotalMilliseconds));
