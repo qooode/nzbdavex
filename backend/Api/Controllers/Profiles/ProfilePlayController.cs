@@ -29,7 +29,8 @@ public class ProfilePlayController(
     DavDatabaseClient dbClient,
     QueueManager queueManager,
     WebsocketManager websocketManager,
-    QueueItemSourceTracker sourceTracker
+    QueueItemSourceTracker sourceTracker,
+    LazyRarResolver lazyRarResolver
 ) : ControllerBase
 {
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
@@ -771,7 +772,38 @@ public class ProfilePlayController(
         var baseUrl = HttpContext.GetPublicBaseUrl(configManager.GetBaseUrl());
         var path = DatabaseStoreSymlinkFile.GetTargetPath(davItemId, "", '/').TrimStart('/');
         var dlKey = GetWebdavItemRequest.GenerateDownloadKey(configManager.GetStrmKey(), path);
+
+        _ = PreWarmLazyResolutionAsync(davItemId);
+
         return Redirect($"{baseUrl}/view/{path}?downloadKey={dlKey}&extension={extension}");
+    }
+
+    private async Task PreWarmLazyResolutionAsync(Guid davItemId)
+    {
+        try
+        {
+            await using var ctx = new DavDatabaseContext();
+            var davItem = await ctx.Items.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == davItemId)
+                .ConfigureAwait(false);
+            if (davItem is null || davItem.SubType != DavItem.ItemSubType.MultipartFile) return;
+
+            var freshClient = new DavDatabaseClient(ctx);
+            var mpf = await freshClient.GetDavMultipartFileAsync(davItem).ConfigureAwait(false);
+            if (mpf is null) return;
+            if (!mpf.Metadata.IsLazy) return;
+            if ((mpf.Metadata.PendingParts?.Length ?? 0) == 0) return;
+
+            await lazyRarResolver
+                .EnsureResolvedThroughAsync(mpf, long.MaxValue, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            Log.Debug(e,
+                "Pre-redirect lazy RAR pre-warm failed for {DavItemId}; on-demand resolver will pick it up",
+                davItemId);
+        }
     }
 
     private readonly record struct PreVerifyResult(
