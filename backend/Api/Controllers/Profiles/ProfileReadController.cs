@@ -133,7 +133,7 @@ public class ProfileReadController(
             })
             .ToList();
 
-        var tokens = cache.AddGroup(candidates, type);
+        var tokens = cache.AddGroup(candidates, type, token, id);
 
         preflightOrchestrator.Start(token, type, id, candidates);
 

@@ -13,7 +13,7 @@ public class NzbResolutionCache
     /// points at the same ordered Candidates list with its own StartIndex, so the play
     /// handler can iterate from any starting position for fast-fail + fallback.
     /// </summary>
-    public string[] AddGroup(IReadOnlyList<Candidate> candidates, string type)
+    public string[] AddGroup(IReadOnlyList<Candidate> candidates, string type, string profileToken, string id)
     {
         Cleanup();
         var tokens = new string[candidates.Count];
@@ -25,6 +25,8 @@ public class NzbResolutionCache
                 Candidates = candidates,
                 StartIndex = i,
                 Type = type,
+                ProfileToken = profileToken,
+                Id = id,
                 CreatedAt = DateTime.UtcNow,
             };
             tokens[i] = token;
@@ -67,6 +69,8 @@ public class NzbResolutionCache
         public required IReadOnlyList<Candidate> Candidates { get; init; }
         public required int StartIndex { get; init; }
         public required string Type { get; init; }
+        public required string ProfileToken { get; init; }
+        public required string Id { get; init; }
         public required DateTime CreatedAt { get; init; }
 
         public Candidate Primary => Candidates[StartIndex];

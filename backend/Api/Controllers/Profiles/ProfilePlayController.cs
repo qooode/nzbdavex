@@ -31,7 +31,8 @@ public class ProfilePlayController(
     WebsocketManager websocketManager,
     QueueItemSourceTracker sourceTracker,
     LazyRarResolver lazyRarResolver,
-    PreflightCache preflightCache
+    PreflightCache preflightCache,
+    PreflightSessionRegistry preflightSessions
 ) : ControllerBase
 {
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
@@ -65,6 +66,8 @@ public class ProfilePlayController(
 
         var entry = cache.Get(nzbToken);
         if (entry is null) return NotFound("Stream link expired. Re-search in your player.");
+
+        preflightSessions.Cancel(entry.ProfileToken, entry.Type, entry.Id);
 
         // Already-downloaded by any prior click in this candidate group: single DB lookup.
         // We deliberately don't use any in-memory "previously resolved DavItemId" cache:

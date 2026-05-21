@@ -279,8 +279,8 @@ public class ConfigManager
     public int GetPreflightMaxAttempts()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("preflight.max-attempts"));
-        if (v == null) return 3;
-        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 50) : 3;
+        if (v == null) return 20;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 50) : 20;
     }
 
     public int GetPreflightTtlSeconds()

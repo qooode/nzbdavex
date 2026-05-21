@@ -57,7 +57,7 @@ const defaultConfig = {
     "play.candidate-negative-cache-minutes": "5",
     "play.exclude-patterns": "",
     "preflight.mode": "off",
-    "preflight.max-attempts": "3",
+    "preflight.max-attempts": "20",
     "preflight.ttl-seconds": "120",
     "preflight.indexer-max-wait-seconds": "5",
     "repair.enable": "false",

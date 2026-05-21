@@ -28,6 +28,15 @@ public class PreflightSessionRegistry
         owned.Dispose();
     }
 
+    public void Cancel(string profileToken, string type, string id)
+    {
+        var key = MakeKey(profileToken, type, id);
+        if (_sessions.TryGetValue(key, out var cts))
+        {
+            try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        }
+    }
+
     private static string MakeKey(string profileToken, string type, string id) =>
         $"{profileToken}\x1f{type}\x1f{id}";
 

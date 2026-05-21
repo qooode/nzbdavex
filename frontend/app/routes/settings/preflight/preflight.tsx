@@ -53,13 +53,13 @@ export function PreflightSettings({ config, setNewConfig }: PreflightSettingsPro
                     min={1}
                     max={50}
                     disabled={!enabled}
-                    value={config["preflight.max-attempts"] ?? "3"}
+                    value={config["preflight.max-attempts"] ?? "20"}
                     onChange={e => set("preflight.max-attempts", e.target.value)} />
                 <p className={styles.hint}>
                     Walks the top-ranked results one at a time and stops on the first one that
                     passes the check. So a missing top result automatically falls through to
                     the next one — same idea as the watchdog at click time, but in the
-                    background. Default 3.
+                    background. Default 20.
                 </p>
             </Form.Group>
 

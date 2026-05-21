@@ -14,7 +14,8 @@ public class PreflightOrchestrator(
     PlaybackFastVerifier fastVerifier,
     NewznabRateLimiter rateLimiter,
     LazyRarResolver lazyRarResolver,
-    PreflightSessionRegistry sessionRegistry)
+    PreflightSessionRegistry sessionRegistry,
+    CandidateNegativeCache negativeCache)
 {
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
 
@@ -97,7 +98,11 @@ public class PreflightOrchestrator(
             outcome = await fastVerifier.VerifyAsync(ms, "stat", ct).ConfigureAwait(false);
         }
 
-        if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead) return false;
+        if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)
+        {
+            negativeCache.MarkFailed(candidate.NzbUrl);
+            return false;
+        }
 
         var bytesToCache = mode == "light" ? null : nzbBytes;
         preflightCache.SetVerified(candidate.NzbUrl, bytesToCache, outcome.Verdict, outcome.ResponderHost);
