@@ -26,12 +26,12 @@ NzbDav exposes a per-profile search-API endpoint (Search Profiles) that any comp
 ## Phase 1: Prerequisites
 
 ### 1. Usenet Provider
-You need an usenet provider to download content. Consult the [Usenet Providers Wiki](https://www.reddit.com/r/usenet/wiki/providerdeals/) for a full list.
+You need a Usenet provider account. Any provider supporting NNTP with SSL works; the choice and lawful use of the provider is your responsibility.
 
 ### 2. Indexers
-You need usenet indexers to find content. Consult the [Usenet Indexers Wiki](https://www.reddit.com/r/usenet/wiki/indexers/) for a full list.
+You need one or more Newznab-compatible indexers (or a self-hosted aggregator) to enable search. The choice and lawful use of the indexers is your responsibility.
 
-Add these to Prowlarr and sync them to your Radarr/Sonarr instances.
+Configure them in NzbDav under `Settings → Indexers`, and (optionally) in any external automation tool you use.
 
 ---
 
