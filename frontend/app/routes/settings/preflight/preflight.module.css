@@ -1,5 +1,5 @@
 .container {
-    max-width: 640px;
+    max-width: 560px;
 }
 
 .section {
@@ -30,75 +30,4 @@
     font-size: 12px;
     margin-top: 4px;
     margin-bottom: 0;
-}
-
-.modeGrid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.modeCard {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 10px 12px;
-    cursor: pointer;
-    background-color: var(--bg-surface);
-    transition: border-color 120ms ease, background-color 120ms ease;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-}
-
-.modeCard:hover {
-    border-color: var(--border-strong, rgba(120, 120, 120, 0.55));
-}
-
-.modeCardSelected {
-    border-color: rgba(34, 197, 94, 0.55);
-    background-color: rgba(34, 197, 94, 0.06);
-}
-
-.modeRadio {
-    margin-top: 3px;
-    accent-color: #22c55e;
-}
-
-.modeBody {
-    flex: 1;
-    min-width: 0;
-}
-
-.modeName {
-    font-weight: 600;
-    font-size: 13px;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.modeRecommended {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(34, 197, 94, 0.18);
-    color: #22c55e;
-}
-
-.modeDescription {
-    color: var(--text-muted);
-    font-size: 12px;
-    margin-top: 2px;
-}
-
-.modeCost {
-    color: var(--text-faint, var(--text-muted));
-    font-size: 11px;
-    margin-top: 4px;
-    font-style: italic;
 }
