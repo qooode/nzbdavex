@@ -165,7 +165,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
 
                 {indexerConfig.Indexers.length === 0 ? (
                     <p className={styles.alertMessage}>
-                        No indexers configured. Add a Newznab-compatible indexer (e.g. NZBgeek, NZBHydra2, Prowlarr) to enable search.
+                        No indexers configured. Add a Newznab-compatible indexer (or aggregator) to enable search.
                     </p>
                 ) : (
                     <div className={styles["indexers-grid"]}>
@@ -502,7 +502,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 type="text"
                                 id="indexer-name"
                                 className={styles["form-input"]}
-                                placeholder="e.g. NZBgeek"
+                                placeholder="e.g. My Indexer"
                                 value={name}
                                 onChange={e => setName(e.target.value)}
                             />
@@ -514,7 +514,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 type="text"
                                 id="indexer-url"
                                 className={`${styles["form-input"]} ${!isUrlValid && url !== "" ? styles.error : ""}`}
-                                placeholder="https://api.nzbgeek.info"
+                                placeholder="https://api.example.com"
                                 value={url}
                                 onChange={e => setUrl(e.target.value)}
                             />

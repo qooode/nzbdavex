@@ -104,7 +104,7 @@ Set your username and password.
 
 **B. Usenet Settings (`Settings` > `Usenet`)**
 
-* **Host:** `news.newshosting.com` (put your provider here).
+* **Host:** `news.example.com` (put your provider's host here).
 * **Port:** `563`
 * **Username / Password:** Your Usenet creds.
 * **Max Connections:** `100` (Set to your provider's max allowed).
