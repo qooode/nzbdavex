@@ -26,8 +26,8 @@ public class ProfileManifestController(ConfigManager configManager) : Controller
         {
             id = $"nzbdav.profile.{token}",
             version = ConfigManager.AppVersion,
-            name = string.IsNullOrWhiteSpace(profile.Name) ? "NzbDav Profile" : profile.Name,
-            description = "Search results from your configured indexers.",
+            name = string.IsNullOrWhiteSpace(profile.Name) ? "NzbDav Search Profile" : profile.Name,
+            description = "Newznab search-API endpoint returning results from the user's configured indexers.",
             resources = new[] { "stream" },
             types = new[] { "movie", "series" },
             idPrefixes = new[] { "tt" },

@@ -1,9 +1,9 @@
 # Comprehensive NzbDav Setup Guide
 
-This guide is an opinionated, step-by-step walkthrough to setting up NzbDav for maximum performance ("infinite library" style) with Radarr, Sonarr, Plex/Jellyfin and Stremio.
+This guide is an opinionated, step-by-step walkthrough to setting up NzbDav for a self-hosted Usenet-backed personal media library, integrated with media managers (Radarr/Sonarr), media servers (Plex/Jellyfin), and external search clients.
 
-## How the "Infinite Library" Works
-Before configuring, it helps to understand the flow:
+## How the personal-library flow works
+NzbDav can be used in two complementary paths. Configure whichever paths fit your setup.
 
 ### Path A: The Automation Flow (Radarr/Sonarr + Plex/Jellyfin)
 1. **Radarr** sends an `.nzb` file to NzbDav (acting as a download client) to "download".
@@ -14,13 +14,14 @@ Before configuring, it helps to understand the flow:
 5. **Plex** reads the Symlink -> Rclone Mount -> WebDAV Stream -> Usenet Provider.
     * **RClone** will make the nzb contents available to your filesystem by streaming, without using any storage space on your server.
 
-### Path B: The On-Demand Flow (Stremio)
-1. **Stremio (via AIOStreams)** searches your indexers using the `Newznab` addon and finds a release.
-2. **AIOStreams** sends the `.nzb` to NzbDav's API to mount it.
+### Path B: The On-Demand Flow (External Search Clients)
+NzbDav exposes a per-profile search-API endpoint (Search Profiles) that any compatible external client can query and then trigger playback through NzbDav's mount. One concrete client setup using AIOStreams is documented in [Phase 5](#phase-5-on-demand-search-clients-example-aiostreams) below; the flow is:
+1. **The external client** searches your indexers via the Search Profile endpoint and finds a release.
+2. **The client** sends the `.nzb` to NzbDav's API to mount it.
 3. **NzbDav** mounts the file instantly via WebDAV.
-4. **AIOStreams** generates a streamable URL.
-   * *Note: If using the recommended Proxy setup, this URL points to AIOStreams, which tunnels the traffic from NzbDav.*
-5. **Stremio** plays the video from that URL (bypassing Rclone/Symlinks entirely).
+4. **The client** generates a streamable URL.
+   * *Note: If using the recommended Proxy setup, this URL points back through the client, which tunnels the traffic from NzbDav.*
+5. **The client** plays the video from that URL (bypassing Rclone/Symlinks entirely).
 
 ## Phase 1: Prerequisites
 
@@ -322,13 +323,15 @@ Go to NzbDav `Settings` > `Radarr/Sonarr`.
 
 ---
 
-## Phase 5: Usenet Streaming in Stremio (via AIOStreams)
+## Phase 5: On-demand search clients (example: AIOStreams)
 
-You can stream your Usenet content directly in Stremio using [AIOStreams](https://github.com/Viren070/AIOStreams).
+NzbDav's **Search Profiles** feature exposes a token-scoped search-API endpoint that any compatible external client can use to query your indexers and trigger on-demand playback through NzbDav. The protocol shape is compatible with several search-driven media clients.
 
-For more info, check out their [Usenet Wiki](https://github.com/Viren070/AIOStreams/wiki/Usenet).
+Below is a walkthrough using [AIOStreams](https://github.com/Viren070/AIOStreams) as one concrete example. The same NzbDav endpoint can be consumed by other compatible clients; AIOStreams is documented here because its setup is well-known. For its own documentation see the [AIOStreams Usenet Wiki](https://github.com/Viren070/AIOStreams/wiki/Usenet).
 
-### 1. Configure NzbDav Service
+> **Note:** NzbDav itself does not host, ship, or recommend specific indexers, providers, or third-party clients. The choice and lawful use of all such services is the responsibility of the operator.
+
+### 1. Configure NzbDav Service in the client
 
 In the AIOStreams UI:
 
@@ -340,23 +343,23 @@ In the AIOStreams UI:
    * **NzbDAV WebDAV Password:** (From NzbDav `Settings` > `WebDAV`).
    * **AIOStreams Auth Token (Recommended):** Get it from your self-hosted AIOStreams' `.env` file's `AIOSTREAMS_AUTH` environment variable. (e.g., `user:pass`).
 
-### 2. Configure Newznab Addon
+### 2. Configure the client's Newznab addon
 
 In the AIOStreams UI:
 
 1. Go to **Addons** > **Marketplace** > From the Types dropdown, select **Usenet**.
 2. Find the **Newznab** addon and click **Configure**.
 3. Add your indexers (repeat for each one):
-   * **Name:** `NZBGeek` (or similar).
-   * **Newznab URL:** Select `NZBgeek` from dropdown.
+   * **Name:** Your indexer's name.
+   * **Newznab URL:** Your indexer's Newznab URL (from your indexer's account page).
    * **API Key:** Your indexer's API key.
    * **AIOStreams Proxy Auth (Recommended):** Get it from your self-hosted AIOStreams' `.env` file's `AIOSTREAMS_AUTH` environment variable. (e.g., `user:pass`).
    * **Search Mode:** **Forced Query** (was `Auto` by default)
    * **Timeout:** `5000` ms (was `7000` by default)
 4. Leave everything else as default and click **Install**
 
-### 3. Install to Stremio
+### 3. Install in your client
 
-Go to the **Save & Install** tab, click **Save**, and then install the addon to Stremio.
+In AIOStreams, go to the **Save & Install** tab, click **Save**, and then install the addon into your preferred compatible player.
 
 

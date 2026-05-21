@@ -2,7 +2,7 @@
 
 NzbDavEx is a WebDAV server that presents NZB documents as a virtual filesystem. It exposes standard filesystem semantics (browse, read, and random-access seek) over HTTP(S) without requiring full downloads to local disk, and ships a SABnzbd-compatible HTTP API for integration with compatible automation tools.
 
-This is an extended fork of [nzbdav](https://github.com/nzbdav-dev/nzbdav) with additional functionality layered on top: a Watchdog module for unattended file verification, multi-provider NNTP support with per-provider usage accounting, an indexers manager with strict-match filtering, profile-based handling rules, and an updated settings UI.
+This is an extended fork of [nzbdav](https://github.com/nzbdav-dev/nzbdav) with additional functionality layered on top: a Watchdog module for unattended file verification, multi-provider NNTP support with per-provider usage accounting, an indexers manager with strict-match filtering, search profiles exposing token-scoped search-API endpoints to external clients, and an updated settings UI.
 
 ## Features
 
@@ -13,7 +13,7 @@ This is an extended fork of [nzbdav](https://github.com/nzbdav-dev/nzbdav) with 
 - **Multi-provider NNTP**: failover between providers and per-provider usage tracking
 - **Indexers manager**: configure indexer sources from the UI
 - **Watchdog**: automated verification and re-fetch workflows driven by user-defined rules
-- **Profiles**: per-profile handling and quality policies
+- **Search Profiles**: token-scoped search-API endpoints with per-profile indexer selection, consumable by any compatible external client
 - **Health checks & repairs**: detect and replace content no longer available upstream
 
 ## Getting Started

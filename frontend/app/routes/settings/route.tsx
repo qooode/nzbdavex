@@ -128,7 +128,7 @@ function Body(props: BodyProps) {
 
     const usenetTitle = tabTitle("Usenet", iseUsenetUpdated);
     const indexersTitle = tabTitle("Indexers", isIndexersUpdated);
-    const profilesTitle = tabTitle("Profiles", isProfilesUpdated);
+    const profilesTitle = tabTitle("Search Profiles", isProfilesUpdated);
     const watchdogTitle = tabTitle("Watchdog", isWatchdogUpdated);
     const preflightTitle = tabTitle("Preflight", isPreflightUpdated);
     const advancedTitle = tabTitle("Advanced", isAdvancedUpdated);
@@ -140,7 +140,7 @@ function Body(props: BodyProps) {
         : isWebdavUpdated && !isWebdavSettingsValid(newConfig) ? "Invalid WebDAV settings"
         : isArrsUpdated && !isArrsSettingsValid(newConfig) ? "Invalid Arrs settings"
         : isIndexersUpdated && !isIndexersSettingsValid(newConfig) ? "Invalid Indexers settings"
-        : isProfilesUpdated && !isProfilesSettingsValid(newConfig) ? "Invalid Profiles settings"
+        : isProfilesUpdated && !isProfilesSettingsValid(newConfig) ? "Invalid Search Profiles settings"
         : isWatchdogUpdated && !isWatchdogSettingsValid(newConfig) ? "Invalid Watchdog regex"
         : "Save";
     const saveButtonVariant = saveButtonLabel === "Save" ? "primary"

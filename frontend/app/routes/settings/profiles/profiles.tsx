@@ -81,12 +81,12 @@ export function ProfilesSettings({ config, setNewConfig }: ProfilesSettingsProps
         <div className={styles.container}>
             <div className={styles.section}>
                 <div className={styles.sectionHeader}>
-                    <div>Profiles</div>
+                    <div>Search Profiles</div>
                     <Button variant="primary" size="sm" onClick={add}>Add</Button>
                 </div>
                 {profileConfig.Profiles.length === 0 ? (
                     <p className={styles.alertMessage}>
-                        No profiles configured. Each profile gets its own install URL with a custom indexer selection.
+                        No search profiles configured. Each profile gets its own search-API URL with a custom indexer selection, usable by any compatible client.
                     </p>
                 ) : (
                     profileConfig.Profiles.map((profile, index) => (
@@ -172,7 +172,7 @@ function ProfileForm({ profile, index, availableIndexers, onChange, onRemove }: 
                             {copied ? "Copied" : "Copy"}
                         </Button>
                     </div>
-                    <p className={styles.hint}>Paste this URL into any compatible media player addon to install.</p>
+                    <p className={styles.hint}>Search-API endpoint URL. Use it from any compatible external client to query your configured indexers under this profile.</p>
                 </Form.Group>
             </Card.Body>
         </Card>
