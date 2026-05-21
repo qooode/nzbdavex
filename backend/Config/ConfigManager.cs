@@ -264,9 +264,6 @@ public class ConfigManager
         return patterns;
     }
 
-    // Variants — keeps multiple size copies of the same content group keyed by
-    // (entry.Type, entry.Id). The key is opaque to nzbdav: it never inspects what
-    // the strings mean, only whether two clicks resolve to the same identifier.
     public string GetVariantsMode()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("variants.mode"));

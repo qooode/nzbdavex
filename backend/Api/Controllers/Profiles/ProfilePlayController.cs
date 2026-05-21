@@ -70,11 +70,6 @@ public class ProfilePlayController(
 
         preflightSessions.Cancel(entry.ProfileToken, entry.Type, entry.Id);
 
-        // Variants — size-aware lookup runs before the legacy filename match. The decision
-        // is one of three: reuse an existing variant (redirect), fetch a new variant (skip
-        // the legacy match — it would otherwise route us to the biggest existing video and
-        // defeat the whole point of variant collection), or no variant context (fall through
-        // to legacy + watchdog as before).
         var skipLegacyMatch = false;
         if (variantResolver.IsEnabled)
         {
@@ -83,35 +78,25 @@ public class ProfilePlayController(
             if (decision.ReuseMatch is not null)
             {
                 var variantRedirect = await BuildRedirectForHistoryItemAsync(
-                    decision.ReuseMatch.Row.HistoryItemId, HttpContext.RequestAborted).ConfigureAwait(false);
+                    decision.ReuseMatch.Row.HistoryItemId, entry, HttpContext.RequestAborted).ConfigureAwait(false);
                 if (variantRedirect is not null) return variantRedirect;
-                // Variant disappeared (race with delete or active-stream eviction): fall through.
             }
             skipLegacyMatch = decision.GroupHasMembers;
         }
 
-        // Already-downloaded by any prior click in this candidate group: single DB lookup.
-        // We deliberately don't use any in-memory "previously resolved DavItemId" cache:
-        // DavItems can be deleted (RemoveUnlinkedFilesTask, manual cleanup from /explore),
-        // and a stale cached redirect would 302 the player into a dead 400. The DB lookup
-        // self-heals when items are gone (FindLargestVideoAsync returns null → falls through).
         if (!skipLegacyMatch)
         {
             var existingResolved = await TryResolveExistingAsync(entry, HttpContext.RequestAborted).ConfigureAwait(false);
             if (existingResolved is not null) return existingResolved;
         }
 
-        // In-flight guard — if any QueueItem with the same content-group is already
-        // downloading, wait on it instead of starting a parallel download. The watchdog
-        // would also dedup by filename later (line ~621), but checking at the top stops
-        // us from burning indexer API quota searching for alternates we don't need.
         if (variantResolver.IsEnabled)
         {
             var inFlight = await variantResolver.FindInFlightAsync(dbClient.Ctx, entry, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
             if (inFlight.HasValue)
             {
-                var waitRedirect = await WaitForInFlightAsync(inFlight.Value, HttpContext.RequestAborted)
+                var waitRedirect = await WaitForInFlightAsync(inFlight.Value, entry, HttpContext.RequestAborted)
                     .ConfigureAwait(false);
                 if (waitRedirect is not null) return waitRedirect;
             }
@@ -655,9 +640,6 @@ public class ProfilePlayController(
                        ?? configManager.GetManualUploadCategory();
         var contentGroupKey = cacheEntry is null ? null : VariantResolver.BuildContentGroupKey(cacheEntry);
 
-        // If a previous click already enqueued this NZB OR any sibling variant of the
-        // same content-group is still processing, skip the duplicate enqueue and just
-        // poll on the existing item.
         Guid nzoId;
         Guid? newlyEnqueuedNzoId = null;
         try
@@ -738,12 +720,9 @@ public class ProfilePlayController(
                     return (null, CommitReason.QueueFailed, newlyEnqueuedNzoId);
                 }
 
-                var redirect = await BuildRedirectForHistoryItemAsync(nzoId, ct).ConfigureAwait(false);
+                var redirect = await BuildRedirectForHistoryItemAsync(nzoId, cacheEntry, ct).ConfigureAwait(false);
                 if (redirect is null) return (null, CommitReason.QueueFailed, newlyEnqueuedNzoId);
 
-                // Cap enforcement (fire-and-forget on a fresh scope — never blocks the
-                // play redirect). Only relevant for newly-completed downloads in a group
-                // that exists; reuse paths don't add new variants.
                 if (newlyEnqueuedNzoId.HasValue && contentGroupKey is not null && variantResolver.IsEnabled)
                 {
                     var keyCopy = contentGroupKey;
@@ -798,16 +777,13 @@ public class ProfilePlayController(
                 var existing = await TryResolveExistingAsync(entry, ct).ConfigureAwait(false);
                 if (existing is not null) return existing;
 
-                // Variants — when fallback-on-failure is on, route to the closest existing
-                // variant (no tolerance check) so the player gets *something* watchable
-                // rather than a 503 after every dead release in the group.
                 if (variantResolver.IsEnabled)
                 {
                     var fallback = await variantResolver.TryFallbackAfterFailureAsync(dbClient.Ctx, entry, ct)
                         .ConfigureAwait(false);
                     if (fallback is not null)
                     {
-                        var redirect = await BuildRedirectForHistoryItemAsync(fallback.Row.HistoryItemId, ct)
+                        var redirect = await BuildRedirectForHistoryItemAsync(fallback.Row.HistoryItemId, entry, ct)
                             .ConfigureAwait(false);
                         if (redirect is not null)
                         {
@@ -834,55 +810,27 @@ public class ProfilePlayController(
             .ToList();
         if (fileNames.Count == 0) return null;
 
-        var existing = await dbClient.Ctx.HistoryItems
+        var existing = await dbClient.Ctx.HistoryItems.AsNoTracking()
             .Where(h => fileNames.Contains(h.FileName) && h.DownloadStatus == HistoryItem.DownloadStatusOption.Completed)
             .OrderByDescending(h => h.CreatedAt)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
 
         if (existing is null) return null;
-
-        // Backfill ContentGroupKey on legacy HistoryItems (pre-Variants data) so future
-        // size-aware lookups can find them. Best-effort: a save failure here is harmless,
-        // the next click will retry.
-        var clickKey = VariantResolver.BuildContentGroupKey(entry);
-        if (clickKey is not null && existing.ContentGroupKey is null)
-        {
-            existing.ContentGroupKey = clickKey;
-            try { await dbClient.Ctx.SaveChangesAsync(ct).ConfigureAwait(false); }
-            catch (Exception e) when (!e.IsCancellationException())
-            {
-                Log.Debug(e, "Variants: failed to backfill ContentGroupKey for legacy HistoryItem {Id}", existing.Id);
-            }
-        }
-
-        return await BuildRedirectForHistoryItemAsync(existing.Id, ct).ConfigureAwait(false);
+        return await BuildRedirectForHistoryItemAsync(existing.Id, entry, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Build a play redirect for a previously-downloaded HistoryItem. Picks the
-    /// largest video file under it, pre-warms lazy RAR resolution, and bumps
-    /// LastPlayedAt for variant-LRU bookkeeping. Returns null if the HistoryItem
-    /// has no playable video (e.g. files were deleted).
-    /// </summary>
-    private async Task<IActionResult?> BuildRedirectForHistoryItemAsync(Guid historyItemId, CancellationToken ct)
+    private async Task<IActionResult?> BuildRedirectForHistoryItemAsync(
+        Guid historyItemId, NzbResolutionCache.Entry? entry, CancellationToken ct)
     {
-        var video = await FindLargestVideoAsync(historyItemId, ct).ConfigureAwait(false);
+        var video = await FindBestVideoAsync(historyItemId, entry, ct).ConfigureAwait(false);
         if (video is null) return null;
         var ext = Path.GetExtension(video.Name).TrimStart('.').ToLowerInvariant();
         var redirect = await BuildRedirectAsync(video.Id, ext, ct).ConfigureAwait(false);
-        // Fire-and-forget — LastPlayedAt drives variant LRU eviction, never the
-        // play response. Use CancellationToken.None so a client disconnect right
-        // after the redirect still records the bump.
         _ = variantResolver.MarkPlayedAsync(historyItemId, CancellationToken.None);
         return redirect;
     }
 
-    /// <summary>
-    /// Poll a known in-flight QueueItem until it completes (or budget exhausts),
-    /// then redirect to its largest video. Used when a parallel download for the
-    /// same content-group is already running — avoids starting a duplicate.
-    /// </summary>
-    private async Task<IActionResult?> WaitForInFlightAsync(Guid nzoId, CancellationToken ct)
+    private async Task<IActionResult?> WaitForInFlightAsync(Guid nzoId, NzbResolutionCache.Entry entry, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(configManager.GetPlayTotalBudgetSeconds());
         _playLastSeen[nzoId] = DateTimeOffset.UtcNow;
@@ -901,7 +849,7 @@ public class ProfilePlayController(
             {
                 _playLastSeen.TryRemove(nzoId, out _);
                 if (history.DownloadStatus != HistoryItem.DownloadStatusOption.Completed) return null;
-                return await BuildRedirectForHistoryItemAsync(nzoId, ct).ConfigureAwait(false);
+                return await BuildRedirectForHistoryItemAsync(nzoId, entry, ct).ConfigureAwait(false);
             }
 
             if (_playLastSeen.ContainsKey(nzoId))
@@ -913,16 +861,58 @@ public class ProfilePlayController(
     }
 
     private async Task<DavItem?> FindLargestVideoAsync(Guid historyItemId, CancellationToken ct)
+        => await FindBestVideoAsync(historyItemId, entry: null, ct).ConfigureAwait(false);
+
+    private static readonly char[] TokenSeparators = ['.', '_', '-', ' ', '(', ')', '[', ']', '{', '}', '+'];
+
+    private async Task<DavItem?> FindBestVideoAsync(Guid historyItemId, NzbResolutionCache.Entry? entry, CancellationToken ct)
     {
         var files = await dbClient.Ctx.Items.AsNoTracking()
             .Where(x => x.HistoryItemId == historyItemId)
             .Where(x => x.Type == DavItem.ItemType.UsenetFile)
             .ToListAsync(ct).ConfigureAwait(false);
 
-        return files
+        var videos = files
             .Where(x => ContentTypeUtil.GetContentType(x.Name).StartsWith("video/", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(x => x.FileSize ?? 0)
-            .FirstOrDefault();
+            .ToList();
+        if (videos.Count == 0) return null;
+        if (videos.Count == 1) return videos[0];
+
+        if (entry is not null)
+        {
+            var clickTokens = TokenizeName(entry.Primary.Title);
+            if (clickTokens.Count > 0)
+            {
+                DavItem? best = null;
+                int bestScore = 0;
+                long bestSize = -1;
+                foreach (var v in videos)
+                {
+                    if (v.Name.Contains("sample", StringComparison.OrdinalIgnoreCase)) continue;
+                    var fileTokens = TokenizeName(Path.GetFileNameWithoutExtension(v.Name));
+                    if (fileTokens.Count == 0) continue;
+                    var score = fileTokens.Count(t => clickTokens.Contains(t));
+                    var size = v.FileSize ?? 0;
+                    if (score > bestScore || (score == bestScore && score > 0 && size > bestSize))
+                    {
+                        best = v;
+                        bestScore = score;
+                        bestSize = size;
+                    }
+                }
+                if (best is not null && bestScore > 0) return best;
+            }
+        }
+
+        return videos.OrderByDescending(x => x.FileSize ?? 0).First();
+    }
+
+    private static HashSet<string> TokenizeName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return s.Split(TokenSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => t.Length > 1)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static string SanitizeFileName(string name)

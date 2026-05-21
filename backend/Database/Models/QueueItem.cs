@@ -13,10 +13,6 @@ public class QueueItem
     public PostProcessingOption PostProcessing { get; set; }
     public DateTime? PauseUntil { get; set; }
     public string? IndexerName { get; set; }
-
-    // Variants — opaque content-group identifier inherited from the play click.
-    // Lets the play handler detect "same content already downloading" without
-    // racing on filename matches across indexer-specific release titles.
     public string? ContentGroupKey { get; set; }
 
     public enum PriorityOption

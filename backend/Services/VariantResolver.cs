@@ -8,25 +8,8 @@ using Serilog;
 
 namespace NzbWebDAV.Services;
 
-/// <summary>
-/// Variants — keeps multiple size copies of the same content group keyed by
-/// (entry.Type, entry.Id). The key is opaque to nzbdav: it never inspects what
-/// the strings mean, only whether two clicks resolve to the same identifier.
-///
-/// Resolution decides, for each play click:
-///   1. is there an in-flight download for this content? → wait on it
-///   2. is there a completed download in tolerance? → reuse it
-///   3. otherwise → let the watchdog fetch a new variant
-///
-/// Replay selection (≥2 variants) and eviction (capacity bound) live here too.
-/// </summary>
 public class VariantResolver(ConfigManager configManager)
 {
-    /// <summary>
-    /// Build the content-group key from a cache entry. Opaque to nzbdav — just
-    /// joins the two strings the play flow already has. Returns null if either
-    /// is empty (defensive; play flow requires both, but legacy/test paths may not).
-    /// </summary>
     public static string? BuildContentGroupKey(string? type, string? id)
     {
         if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(id)) return null;
@@ -38,12 +21,6 @@ public class VariantResolver(ConfigManager configManager)
 
     public bool IsEnabled => configManager.GetVariantsMode() != "off";
 
-    /// <summary>
-    /// Single per-click decision combining "is there a variant we should reuse?"
-    /// and "does the group have any members at all?" The latter tells the caller
-    /// whether to skip the legacy filename match (which would otherwise route the
-    /// player to the biggest existing video, defeating size-aware collection).
-    /// </summary>
     public async Task<VariantDecision> ResolveAsync(
         DavDatabaseContext ctx,
         NzbResolutionCache.Entry entry,
@@ -68,11 +45,6 @@ public class VariantResolver(ConfigManager configManager)
         return new VariantDecision(match, true, groupKey);
     }
 
-    /// <summary>
-    /// On watchdog failure with `variants.fallback-on-failure=true`, return the
-    /// closest existing variant (no tolerance check). Lets a click that asked for
-    /// a size we couldn't fetch still play something rather than 503.
-    /// </summary>
     public async Task<VariantMatch?> TryFallbackAfterFailureAsync(
         DavDatabaseContext ctx,
         NzbResolutionCache.Entry entry,
@@ -89,10 +61,6 @@ public class VariantResolver(ConfigManager configManager)
         return SelectClosest(variants, entry.Primary.Size);
     }
 
-    /// <summary>
-    /// Is there an in-flight QueueItem for this content group? If so, return its id
-    /// so the caller can wait on it instead of starting a parallel download.
-    /// </summary>
     public async Task<Guid?> FindInFlightAsync(
         DavDatabaseContext ctx,
         NzbResolutionCache.Entry entry,
@@ -108,12 +76,6 @@ public class VariantResolver(ConfigManager configManager)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// After a successful download committed by the play flow, enforce the
-    /// max-per-group cap by removing surplus variants. Skips any variant played
-    /// within the active-grace window (default 60s) — never deletes what the
-    /// user is most likely watching right now. Returns the ids of items removed.
-    /// </summary>
     public async Task<IReadOnlyList<Guid>> EnforceCapAsync(
         DavDatabaseClient dbClient,
         WebsocketManager? websocketManager,
@@ -121,7 +83,7 @@ public class VariantResolver(ConfigManager configManager)
         CancellationToken ct)
     {
         var cap = configManager.GetVariantsMaxPerGroup();
-        if (cap <= 0) return Array.Empty<Guid>(); // 0 = unlimited
+        if (cap <= 0) return Array.Empty<Guid>();
 
         var strategy = configManager.GetVariantsEvictionStrategy();
         if (strategy == "never") return Array.Empty<Guid>();
@@ -136,11 +98,8 @@ public class VariantResolver(ConfigManager configManager)
 
         var ranked = strategy switch
         {
-            // Largest-first → drop biggest variants first (keep small copies).
             "largest-first" => variants.OrderByDescending(v => v.LargestFileSize ?? 0).ToList(),
-            // Smallest-first → drop smallest first (keep big copies).
             "smallest-first" => variants.OrderBy(v => v.LargestFileSize ?? 0).ToList(),
-            // LRU (default) → oldest LastPlayedAt evicted first; never-played sorts oldest.
             _ => variants.OrderBy(v => v.LastPlayedAt ?? DateTimeOffset.MinValue).ToList(),
         };
 
@@ -162,9 +121,6 @@ public class VariantResolver(ConfigManager configManager)
             if (websocketManager is not null)
                 _ = websocketManager.SendMessage(
                     WebsocketTopic.HistoryItemRemoved, string.Join(",", toRemove));
-            Log.Information(
-                "Variants: evicted {Count} surplus variant(s) for group {Group} (strategy={Strategy})",
-                toRemove.Count, contentGroupKey, strategy);
         }
         catch (Exception e) when (!e.IsCancellationException())
         {
@@ -175,10 +131,6 @@ public class VariantResolver(ConfigManager configManager)
         return toRemove;
     }
 
-    /// <summary>
-    /// Bump LastPlayedAt for a HistoryItem we just routed the player to. Fire-and-forget
-    /// at the call site — failures here must not block the play redirect.
-    /// </summary>
     public async Task MarkPlayedAsync(Guid historyItemId, CancellationToken ct)
     {
         try
@@ -199,11 +151,6 @@ public class VariantResolver(ConfigManager configManager)
 
     public string ReplayStrategy => configManager.GetVariantsReplayStrategy();
 
-    /// <summary>
-    /// Replay-time tie-break used when the play handler is choosing between multiple
-    /// existing variants (e.g. on watchdog failure fallback). The setting decides
-    /// whether intent (closest-to-click) or a fixed preference wins.
-    /// </summary>
     public VariantRow? PickReplay(IReadOnlyList<VariantRow> variants, long clickSize)
     {
         if (variants.Count == 0) return null;
@@ -225,12 +172,8 @@ public class VariantResolver(ConfigManager configManager)
         var closest = SelectClosest(variants, clickSize);
         if (closest is null) return null;
 
-        // Unknown click size (e.g. indexer didn't report it) → trust the closest match
-        // we have, regardless of tolerance. Smart mode falls back to reuse rather than
-        // pointlessly re-fetching when we can't reason about size differences.
         if (clickSize <= 0) return closest;
 
-        // Closest is exact (or close enough). Reuse.
         var winnerSize = closest.Row.LargestFileSize ?? 0;
         if (winnerSize <= 0) return null;
         var deltaPct = Math.Abs(winnerSize - clickSize) * 100.0 / clickSize;
@@ -246,8 +189,6 @@ public class VariantResolver(ConfigManager configManager)
         foreach (var v in variants)
         {
             var size = v.LargestFileSize ?? 0;
-            // If click size is unknown, treat every variant's delta as 0 — then the
-            // tiebreak (LastPlayedAt) and largest/smallest fallback decides.
             var delta = clickSize > 0 ? Math.Abs(size - clickSize) : 0;
             var played = v.LastPlayedAt ?? DateTimeOffset.MinValue;
             if (best is null || delta < bestDelta || (delta == bestDelta && played > bestPlayed))
@@ -266,9 +207,6 @@ public class VariantResolver(ConfigManager configManager)
         string contentGroupKey,
         CancellationToken ct)
     {
-        // Inner join to DavItems to compute the largest file size for each completed
-        // HistoryItem in the group. Variants per group are small (≤ max-per-group, plus
-        // a few legacy null-key rows are excluded by the WHERE), so this is cheap.
         var rows = await ctx.HistoryItems.AsNoTracking()
             .Where(h => h.ContentGroupKey == contentGroupKey
                         && h.DownloadStatus == HistoryItem.DownloadStatusOption.Completed)
@@ -297,12 +235,6 @@ public sealed record VariantRow(
 
 public sealed record VariantMatch(VariantRow Row, long SizeDeltaBytes);
 
-/// <summary>
-/// Outcome of a per-click variant resolution. ReuseMatch=non-null means redirect
-/// to that variant. ReuseMatch=null + GroupHasMembers=true means "fetch a new
-/// variant for the same content" (skip the legacy filename match). ReuseMatch=null
-/// + GroupHasMembers=false means "no variant context — fall back to legacy/watchdog".
-/// </summary>
 public sealed record VariantDecision(VariantMatch? ReuseMatch, bool GroupHasMembers, string? GroupKey)
 {
     public static readonly VariantDecision NoOp = new(null, false, null);

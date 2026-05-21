@@ -14,13 +14,7 @@ public class HistoryItem
     public Guid? DownloadDirId { get; set; }
     public Guid? NzbBlobId { get; set; }
     public string? IndexerName { get; set; }
-
-    // Variants — opaque content-group identifier inherited from the play click
-    // (entry.Type:entry.Id). Lets multiple size-variants of the same content be
-    // tracked as siblings without nzbdav ever inspecting what the string means.
     public string? ContentGroupKey { get; set; }
-
-    // Variants — last successful play redirect, used as the LRU signal for eviction.
     public DateTimeOffset? LastPlayedAt { get; set; }
 
     public enum DownloadStatusOption
