@@ -164,9 +164,10 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
             <div className={styles.section}>
                 <div className={styles.sectionTitle}>Variants</div>
                 <div className={styles.sectionDescription}>
-                    Keep multiple size copies of the same item. When you click a different
-                    size, nzbdav can fetch and stash that one too, then on future clicks
-                    serve the copy closest to whatever you just picked. Off by default.
+                    Keep multiple size copies of the same item. When you pick a different
+                    size for something nzbdav already has, it can fetch that size too, then
+                    on future picks serve the copy closest to whatever size you just selected.
+                    Off by default.
                 </div>
             </div>
 
@@ -176,13 +177,14 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     className={styles.input}
                     value={variantsMode}
                     onChange={e => set("variants.mode", e.target.value)}>
-                    <option value="off">off — always reuse existing, play biggest (today's behavior)</option>
+                    <option value="off">off — always reuse existing, biggest copy (today's behavior)</option>
                     <option value="smart">smart — reuse if size is close enough, else fetch the new variant</option>
-                    <option value="collect-all">collect-all — every meaningfully different click fetches a new copy</option>
+                    <option value="collect-all">collect-all — every meaningfully different size adds a new copy</option>
                 </Form.Select>
                 <p className={styles.hint}>
-                    `smart` is the GOATED default once you flip it on. `collect-all` is
-                    storage-hungry — every click that isn't a near-exact size match adds another copy.
+                    `smart` is the recommended default once enabled. `collect-all` adds a new
+                    copy for every distinct size you pick (no near-exact match) — usually fine
+                    since files are mounted, not stored locally; only the metadata grows.
                 </p>
             </Form.Group>
 
@@ -198,7 +200,7 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     onChange={e => set("variants.tolerance-pct", e.target.value)} />
                 <p className={styles.hint}>
                     `smart` mode only. Existing copy is reused if its size is within ±N% of
-                    what you just clicked. Outside that → fetch the new variant and keep both.
+                    what you selected. Outside that → fetch the new variant and keep both.
                     Default 25 (generous to absorb indexer-vs-actual size drift).
                 </p>
             </Form.Group>
@@ -214,25 +216,26 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     value={config["variants.max-per-group"] ?? "3"}
                     onChange={e => set("variants.max-per-group", e.target.value)} />
                 <p className={styles.hint}>
-                    Storage cap per content group. When exceeded, the eviction strategy below
-                    decides which to drop. Set to 0 for unlimited (hoarder mode). Default 3.
+                    Cap on how many size copies of the same item to keep at once. When the
+                    cap is hit, the eviction strategy below decides which to drop. Set to 0
+                    for unlimited. Default 3.
                 </p>
             </Form.Group>
 
             <Form.Group className={styles.section}>
-                <Form.Label>Replay selection</Form.Label>
+                <Form.Label>Selection strategy</Form.Label>
                 <Form.Select
                     className={styles.input}
                     disabled={!variantsEnabled}
                     value={config["variants.replay-strategy"] ?? "closest-to-click"}
                     onChange={e => set("variants.replay-strategy", e.target.value)}>
-                    <option value="closest-to-click">closest-to-click — match the size of what I clicked (recommended)</option>
-                    <option value="largest">largest — always pick the biggest copy, ignore what I clicked</option>
-                    <option value="smallest">smallest — always pick the smallest copy, ignore what I clicked</option>
+                    <option value="closest-to-click">closest-to-selection — match the size I picked (recommended)</option>
+                    <option value="largest">largest — always pick the biggest copy, ignore my selection</option>
+                    <option value="smallest">smallest — always pick the smallest copy, ignore my selection</option>
                 </Form.Select>
                 <p className={styles.hint}>
-                    When multiple copies exist for the same group, which one to play. `closest-to-click`
-                    uses what you just picked as the intent signal — the GOATED choice.
+                    When multiple copies exist for the same group, which one to serve.
+                    `closest-to-selection` uses what you just picked as the intent signal.
                 </p>
             </Form.Group>
 
@@ -240,13 +243,13 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                 <Form.Check
                     type="switch"
                     id="variants-fallback-on-failure"
-                    label="Fallback to closest existing on watchdog failure"
+                    label="Fallback to closest existing on fetch failure"
                     disabled={!variantsEnabled}
                     checked={variantsFallback}
                     onChange={e => set("variants.fallback-on-failure", String(e.target.checked))} />
                 <p className={styles.hint}>
-                    When you click a size we don't have AND the watchdog can't fetch any working
-                    source, play the closest existing copy instead of returning an error. Strictly
+                    When you pick a size we don't have AND no working source can be fetched,
+                    serve the closest existing copy instead of returning an error. Strictly
                     safer than today's behavior. On by default.
                 </p>
             </Form.Group>
@@ -258,19 +261,19 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     disabled={!variantsEnabled}
                     value={config["variants.eviction-strategy"] ?? "lru"}
                     onChange={e => set("variants.eviction-strategy", e.target.value)}>
-                    <option value="lru">lru — least recently played first (recommended)</option>
+                    <option value="lru">lru — least recently used first (recommended)</option>
                     <option value="largest-first">largest-first — drop biggest first, keep small copies</option>
                     <option value="smallest-first">smallest-first — drop smallest first, keep big copies</option>
-                    <option value="never">never — never auto-delete; new downloads exceed cap and stay</option>
+                    <option value="never">never — never auto-remove; new copies exceed cap and stay</option>
                 </Form.Select>
                 <p className={styles.hint}>
                     Decides which copy is removed when `max copies per group` is hit. LRU is the
-                    safe default. `never` means you delete copies manually from the History view.
+                    safe default. `never` means you remove copies manually from the History view.
                 </p>
             </Form.Group>
 
             <Form.Group className={styles.section}>
-                <Form.Label>Active-stream grace (seconds)</Form.Label>
+                <Form.Label>Active-use grace (seconds)</Form.Label>
                 <Form.Control
                     className={styles.input}
                     type="number"
@@ -280,8 +283,8 @@ export function WatchdogSettings({ config, setNewConfig }: WatchdogSettingsProps
                     value={config["variants.eviction-active-grace-seconds"] ?? "60"}
                     onChange={e => set("variants.eviction-active-grace-seconds", e.target.value)} />
                 <p className={styles.hint}>
-                    Eviction skips any copy played within the last N seconds. Safety net so we
-                    never delete what you're watching right now. Default 60.
+                    Eviction skips any copy used within the last N seconds. Safety net so we
+                    never remove an item that's still being accessed. Default 60.
                 </p>
             </Form.Group>
 
