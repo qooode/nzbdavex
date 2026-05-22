@@ -228,6 +228,13 @@ public class ConfigManager
         };
     }
 
+    public int GetPlayVerifySampleCount()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("play.verify-sample-count"));
+        if (v == null) return 3;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 10) : 3;
+    }
+
     public TimeSpan GetPlayCandidateNegativeCacheTtl()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("play.candidate-negative-cache-minutes"));

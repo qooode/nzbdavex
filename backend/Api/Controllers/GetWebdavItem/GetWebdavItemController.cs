@@ -1,8 +1,10 @@
 ﻿using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NWebDav.Server.Stores;
 using NzbWebDAV.Config;
+using NzbWebDAV.Database;
 using NzbWebDAV.Extensions;
 using NzbWebDAV.Par2Recovery;
 using NzbWebDAV.Services;
@@ -17,7 +19,8 @@ public class GetWebdavItemController(
     DatabaseStore store,
     ConfigManager configManager,
     ProviderUsageTracker providerUsageTracker,
-    ActiveReadRegistry activeReadRegistry
+    ActiveReadRegistry activeReadRegistry,
+    CandidateNegativeCache negativeCache
 ) : ControllerBase
 {
     private async Task<Stream> GetWebdavItem(GetWebdavItemRequest request)
@@ -37,11 +40,16 @@ public class GetWebdavItemController(
         var stream = await item.GetReadableStreamAsync(HttpContext.RequestAborted).ConfigureAwait(false);
         var fileSize = stream.Length;
 
+        var idFile = item as DatabaseStoreIdFile;
+
+        if (idFile?.HistoryItemId is { } hid)
+            HttpContext.Items["historyItemId"] = hid;
+
         // Now that the real filename + size are known, update the active-read
         // entry so the UI shows the human-readable name instead of the .ids GUID.
         if (HttpContext.Items["readSessionId"] is Guid sid)
         {
-            var displayName = item is DatabaseStoreIdFile idFile ? idFile.FriendlyName : item.Name;
+            var displayName = idFile?.FriendlyName ?? item.Name;
             activeReadRegistry.UpdateInfo(sid, displayName, fileSize);
         }
 
@@ -118,13 +126,55 @@ public class GetWebdavItemController(
         // throughput rate populates correctly.
         var buffer = new byte[64 * 1024];
         var position = startOffset;
-        int read;
-        while ((read = await src.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
+        while (true)
         {
+            int read;
+            try
+            {
+                read = await src.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                if (HttpContext.Items["historyItemId"] is Guid hid)
+                {
+                    negativeCache.MarkHistoryItemBroken(hid);
+                    Serilog.Log.Warning(
+                        "Mid-read failed at offset {Offset} for HistoryItem {HistoryItemId}: {Message}",
+                        position, hid, e.Message);
+                    PoisonFileNameAsync(hid);
+                }
+                throw;
+            }
+            if (read <= 0) break;
             await dest.WriteAsync(buffer, 0, read, ct).ConfigureAwait(false);
             position += read;
             activeReadRegistry.Touch(sessionId, read, position);
         }
+    }
+
+    private void PoisonFileNameAsync(Guid historyItemId)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var ctx = new DavDatabaseContext();
+                var fileName = await ctx.HistoryItems.AsNoTracking()
+                    .Where(h => h.Id == historyItemId)
+                    .Select(h => h.FileName)
+                    .FirstOrDefaultAsync().ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(fileName))
+                    negativeCache.MarkFileNameBroken(fileName);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Debug(ex, "PoisonFileNameAsync for {HistoryItemId} failed", historyItemId);
+            }
+        });
     }
 
     private Guid TrackReadSession(string itemPath)

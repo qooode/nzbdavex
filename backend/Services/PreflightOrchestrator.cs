@@ -95,7 +95,9 @@ public class PreflightOrchestrator(
         PlaybackFastVerifier.VerifyOutcome outcome;
         using (var ms = new MemoryStream(nzbBytes, writable: false))
         {
-            outcome = await fastVerifier.VerifyAsync(ms, "stat", ct).ConfigureAwait(false);
+            outcome = await fastVerifier
+                .VerifyAsync(ms, "stat", configManager.GetPlayVerifySampleCount(), ct)
+                .ConfigureAwait(false);
         }
 
         if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)

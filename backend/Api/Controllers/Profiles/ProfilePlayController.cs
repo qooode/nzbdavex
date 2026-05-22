@@ -108,6 +108,7 @@ public class ProfilePlayController(
         var maxCandidates = configManager.GetPlayMaxCandidates();
         var maxAttempts = configManager.GetPlayMaxAttempts();
         var verifyMode = configManager.GetPlayVerifyMode();
+        var verifySampleCount = configManager.GetPlayVerifySampleCount();
         var watchdogEnabled = configManager.IsPlaybackWatchdogEnabled();
         var excludePatterns = configManager.GetPlayExcludePatterns();
 
@@ -197,6 +198,20 @@ public class ProfilePlayController(
                         providerHost: AllConfiguredProvidersDisplay());
                     continue;
                 }
+                var candidateFileName = $"{SanitizeFileName(c.Title)}.nzb";
+                if (negativeCache.IsFileNameBroken(candidateFileName))
+                {
+                    var skippedRank = displayRank++;
+                    rankIndex[c.NzbUrl] = skippedRank;
+                    startsAt[c.NzbUrl] = DateTimeOffset.UtcNow;
+                    RecordAttempt(clickId, c, contentType, requestedTitle, skippedRank,
+                        WatchdogEntry.Outcome.PreVerifyDead,
+                        "Candidate proven broken by a prior mid-read failure — skipped",
+                        startsAt, isWinner: false,
+                        contentGroupKey: contentGroupKey,
+                        providerHost: AllConfiguredProvidersDisplay());
+                    continue;
+                }
                 var excludeMatch = MatchExcludePattern(c.Title, excludePatterns);
                 if (excludeMatch != null)
                 {
@@ -219,7 +234,7 @@ public class ProfilePlayController(
             attemptsUsed += pool.Count;
 
             var batch = await RunBatchAsync(pool, rankIndex, nzbToken, contentType, requestedTitle,
-                clickId, startsAt, verifyMode, hedgeDelay, deadline, totalCts, contentGroupKey).ConfigureAwait(false);
+                clickId, startsAt, verifyMode, verifySampleCount, hedgeDelay, deadline, totalCts, contentGroupKey).ConfigureAwait(false);
 
             switch (batch.Outcome)
             {
@@ -299,6 +314,7 @@ public class ProfilePlayController(
         Guid clickId,
         Dictionary<string, DateTimeOffset> startsAt,
         string verifyMode,
+        int verifySampleCount,
         TimeSpan hedgeDelay,
         DateTimeOffset deadline,
         CancellationTokenSource totalCts,
@@ -306,13 +322,13 @@ public class ProfilePlayController(
     {
         foreach (var c in pool) startsAt[c.NzbUrl] = DateTimeOffset.UtcNow;
 
-        // Phase 1 — pre-verify (parallel, hedged): fetch NZB + verify first segment exists.
+        // Phase 1 — pre-verify (parallel, hedged): fetch NZB + verify segment availability.
         // Track each task's candidate so that if a task throws before producing a result
         // (rare, but possible — see CancelRemainingAndRecord), we can still record a
         // watchdog entry for that candidate instead of dropping it silently.
         var preVerifies = new List<Task<PreVerifyResult>>();
         var taskCandidates = new Dictionary<Task<PreVerifyResult>, NzbResolutionCache.Candidate>();
-        var primaryTask = PreVerifyAsync(pool[0], verifyMode, totalCts.Token);
+        var primaryTask = PreVerifyAsync(pool[0], verifyMode, verifySampleCount, totalCts.Token);
         preVerifies.Add(primaryTask);
         taskCandidates[primaryTask] = pool[0];
 
@@ -330,7 +346,7 @@ public class ProfilePlayController(
                 for (var i = 1; i < pool.Count; i++)
                 {
                     startsAt[pool[i].NzbUrl] = DateTimeOffset.UtcNow;
-                    var t = PreVerifyAsync(pool[i], verifyMode, totalCts.Token);
+                    var t = PreVerifyAsync(pool[i], verifyMode, verifySampleCount, totalCts.Token);
                     preVerifies.Add(t);
                     taskCandidates[t] = pool[i];
                 }
@@ -624,6 +640,7 @@ public class ProfilePlayController(
     private async Task<PreVerifyResult> PreVerifyAsync(
         NzbResolutionCache.Candidate candidate,
         string verifyMode,
+        int verifySampleCount,
         CancellationToken ct)
     {
         try
@@ -639,7 +656,7 @@ public class ProfilePlayController(
                 return new PreVerifyResult(candidate, null, PlaybackFastVerifier.Verdict.Dead, null);
 
             using var verifyStream = new MemoryStream(nzbBytes, writable: false);
-            var outcome = await fastVerifier.VerifyAsync(verifyStream, verifyMode, ct).ConfigureAwait(false);
+            var outcome = await fastVerifier.VerifyAsync(verifyStream, verifyMode, verifySampleCount, ct).ConfigureAwait(false);
             return new PreVerifyResult(candidate, nzbBytes, outcome.Verdict, outcome.ResponderHost);
         }
         catch (OperationCanceledException)
@@ -867,8 +884,13 @@ public class ProfilePlayController(
             .ToList();
         if (fileNames.Count == 0) return null;
 
-        var existing = await dbClient.Ctx.HistoryItems.AsNoTracking()
-            .Where(h => fileNames.Contains(h.FileName) && h.DownloadStatus == HistoryItem.DownloadStatusOption.Completed)
+        var brokenIds = negativeCache.SnapshotBrokenHistoryItems();
+        var query = dbClient.Ctx.HistoryItems.AsNoTracking()
+            .Where(h => fileNames.Contains(h.FileName) && h.DownloadStatus == HistoryItem.DownloadStatusOption.Completed);
+        if (brokenIds.Count > 0)
+            query = query.Where(h => !brokenIds.Contains(h.Id));
+
+        var existing = await query
             .OrderByDescending(h => h.CreatedAt)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
 

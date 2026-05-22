@@ -28,6 +28,8 @@ public class DatabaseStoreIdFile(
     // Active Reads widget that need to display something the user recognises.
     public string FriendlyName => davItem.Name;
 
+    public Guid? HistoryItemId => davItem.HistoryItemId;
+
     public override Task<Stream> GetReadableStreamAsync(CancellationToken cancellationToken)
     {
         return GetItem(davItem).GetReadableStreamAsync(cancellationToken);

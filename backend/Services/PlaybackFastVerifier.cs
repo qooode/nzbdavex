@@ -6,11 +6,6 @@ using UsenetSharp.Models;
 
 namespace NzbWebDAV.Services;
 
-/// <summary>
-/// Cheap pre-flight check used by ProfilePlayController to decide whether to commit
-/// to a candidate release. STATs (or optionally fetches body of) the first segment
-/// of the first non-par2 file. Bounded by caller-supplied cancellation token.
-/// </summary>
 public class PlaybackFastVerifier
 {
     private readonly UsenetStreamingClient _usenetClient;
@@ -20,7 +15,7 @@ public class PlaybackFastVerifier
         _usenetClient = usenetClient;
     }
 
-    public async Task<VerifyOutcome> VerifyAsync(Stream nzbStream, string mode, CancellationToken ct)
+    public async Task<VerifyOutcome> VerifyAsync(Stream nzbStream, string mode, int sampleCount, CancellationToken ct)
     {
         if (mode == "none") return new VerifyOutcome(Verdict.Available, null);
 
@@ -35,52 +30,85 @@ public class PlaybackFastVerifier
             return new VerifyOutcome(Verdict.Dead, null);
         }
 
-        var sampleSegmentId = PickSampleSegment(nzb);
-        if (sampleSegmentId is null) return new VerifyOutcome(Verdict.Dead, null);
+        var samples = PickSampleSegments(nzb, Math.Max(1, sampleCount));
+        if (samples.Count == 0) return new VerifyOutcome(Verdict.Dead, null);
 
-        // Set a holder so the NNTP layer can record which provider answered.
         var attribution = new MultiProviderNntpClient.ResponderAttribution();
         MultiProviderNntpClient.AttributionContext.Value = attribution;
 
+        var tasks = samples.Select(s => CheckSegmentAsync(s, mode, ct)).ToList();
+        Verdict[] results;
+        try
+        {
+            results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new VerifyOutcome(Verdict.Timeout, attribution.Host);
+        }
+
+        if (results.Any(r => r == Verdict.Dead))
+            return new VerifyOutcome(Verdict.Dead, attribution.Host);
+        if (results.All(r => r == Verdict.Timeout))
+            return new VerifyOutcome(Verdict.Timeout, attribution.Host);
+        return new VerifyOutcome(Verdict.Available, attribution.Host);
+    }
+
+    private async Task<Verdict> CheckSegmentAsync(string messageId, string mode, CancellationToken ct)
+    {
         try
         {
             if (mode == "body")
             {
-                var resp = await _usenetClient.DecodedBodyAsync(sampleSegmentId, ct).ConfigureAwait(false);
-                var verdict = resp.ResponseType == UsenetResponseType.ArticleRetrievedBodyFollows
+                var resp = await _usenetClient.DecodedBodyAsync(messageId, ct).ConfigureAwait(false);
+                return resp.ResponseType == UsenetResponseType.ArticleRetrievedBodyFollows
                     ? Verdict.Available
                     : Verdict.Dead;
-                return new VerifyOutcome(verdict, attribution.Host);
             }
             else
             {
-                var resp = await _usenetClient.StatAsync(sampleSegmentId, ct).ConfigureAwait(false);
-                var verdict = resp.ResponseType == UsenetResponseType.ArticleExists
+                var resp = await _usenetClient.StatAsync(messageId, ct).ConfigureAwait(false);
+                return resp.ResponseType == UsenetResponseType.ArticleExists
                     ? Verdict.Available
                     : Verdict.Dead;
-                return new VerifyOutcome(verdict, attribution.Host);
             }
         }
         catch (OperationCanceledException)
         {
-            return new VerifyOutcome(Verdict.Timeout, null);
+            return Verdict.Timeout;
         }
         catch (Exception e) when (!e.IsCancellationException())
         {
-            Log.Debug("Fast-verify errored on {Segment}: {Message}", sampleSegmentId, e.Message);
-            return new VerifyOutcome(Verdict.Timeout, null);
+            Log.Debug("Fast-verify errored on {Segment}: {Message}", messageId, e.Message);
+            return Verdict.Timeout;
         }
     }
 
     public readonly record struct VerifyOutcome(Verdict Verdict, string? ResponderHost);
 
-    private static string? PickSampleSegment(NzbDocument nzb)
+    private static List<string> PickSampleSegments(NzbDocument nzb, int sampleCount)
     {
-        var firstDataFile = nzb.Files
+        var dataFile = nzb.Files
+            .Where(f => f.Segments.Count > 0 && !IsPar2(f))
+            .OrderByDescending(f => f.GetTotalYencodedSize())
+            .FirstOrDefault();
+        var anyFile = dataFile ?? nzb.Files
             .Where(f => f.Segments.Count > 0)
-            .FirstOrDefault(f => !IsPar2(f));
-        var anyFile = firstDataFile ?? nzb.Files.FirstOrDefault(f => f.Segments.Count > 0);
-        return anyFile?.Segments[0].MessageId;
+            .OrderByDescending(f => f.GetTotalYencodedSize())
+            .FirstOrDefault();
+        if (anyFile is null) return new List<string>();
+
+        var segs = anyFile.Segments;
+        var n = Math.Min(sampleCount, segs.Count);
+        if (n <= 1) return new List<string> { segs[0].MessageId };
+
+        var indices = new SortedSet<int>();
+        for (var i = 0; i < n; i++)
+        {
+            var idx = (int)Math.Round(i * (segs.Count - 1) / (double)(n - 1));
+            indices.Add(idx);
+        }
+        return indices.Select(i => segs[i].MessageId).ToList();
     }
 
     private static bool IsPar2(NzbFile file)
