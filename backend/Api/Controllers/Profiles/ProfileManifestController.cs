@@ -6,7 +6,6 @@ using NzbWebDAV.Services;
 namespace NzbWebDAV.Api.Controllers.Profiles;
 
 [ApiController]
-[Route("p/{token}/manifest.json")]
 [Route("adapters/addon/{token}/manifest.json")]
 public class ProfileManifestController(SearchProfileService searchService) : ControllerBase
 {

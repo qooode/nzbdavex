@@ -18,7 +18,6 @@ using Serilog;
 namespace NzbWebDAV.Api.Controllers.Profiles;
 
 [ApiController]
-[Route("p/{token}/play/{nzbToken}.mkv")]
 [Route("adapters/addon/{token}/play/{nzbToken}.mkv")]
 [Route("api/search/{token}/play/{nzbToken}.mkv")]
 public class ProfilePlayController(

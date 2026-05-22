@@ -6,7 +6,6 @@ using NzbWebDAV.Services;
 namespace NzbWebDAV.Api.Controllers.Profiles;
 
 [ApiController]
-[Route("p/{token}/stream/{type}/{id}.json")]
 [Route("adapters/addon/{token}/stream/{type}/{id}.json")]
 public class ProfileReadController(
     SearchProfileService searchService,
@@ -44,7 +43,7 @@ public class ProfileReadController(
                     name = $"[NZB] {c.IndexerName}",
                     description,
                     title = description,
-                    url = $"{baseUrl}/p/{token}/play/{result.PlayTokens[i]}.mkv",
+                    url = $"{baseUrl}/adapters/addon/{token}/play/{result.PlayTokens[i]}.mkv",
                     behaviorHints = new
                     {
                         filename = c.Title,
