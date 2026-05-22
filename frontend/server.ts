@@ -23,7 +23,8 @@ app.use(
         path.startsWith("/content") ||
         path.startsWith("/completed-symlinks") ||
         path.startsWith("/api") ||
-        path.startsWith("/p/")
+        path.startsWith("/p/") ||
+        path.startsWith("/adapters/")
       ) {
         return false;
       }

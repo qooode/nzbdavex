@@ -59,6 +59,7 @@ app.use(async (req, res, next) => {
     || path.startsWith("/content")
     || path.startsWith("/completed-symlinks")
     || path.startsWith("/p/")
+    || path.startsWith("/adapters/")
   ) {
     await setApiKeyForAuthenticatedRequests(req);
     return forwardToBackend(req, res, next);
