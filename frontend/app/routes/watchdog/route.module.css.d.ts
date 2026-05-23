@@ -5,6 +5,14 @@ declare const styles: {
   readonly "title": string;
   readonly "subtitle": string;
   readonly "controls": string;
+  readonly "toolbarBtn": string;
+  readonly "toolbarIcon": string;
+  readonly "spinning": string;
+  readonly "liveBtn": string;
+  readonly "liveBtnOn": string;
+  readonly "liveDot": string;
+  readonly "liveDotOn": string;
+  readonly "toolbarBtnDanger": string;
   readonly "statsBar": string;
   readonly "stat": string;
   readonly "statValue": string;

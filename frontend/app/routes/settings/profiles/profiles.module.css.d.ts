@@ -9,5 +9,12 @@ declare const styles: {
   readonly "urlBox": string;
   readonly "urlInput": string;
   readonly "hint": string;
+  readonly "adapterGroup": string;
+  readonly "adapterRow": string;
+  readonly "disabled": string;
+  readonly "adapterHeader": string;
+  readonly "adapterTitle": string;
+  readonly "adapterName": string;
+  readonly "adapterDescription": string;
 };
 export = styles;
