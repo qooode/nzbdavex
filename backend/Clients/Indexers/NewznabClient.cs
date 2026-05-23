@@ -156,6 +156,7 @@ public class NewznabClient(
             Size = size,
             Posted = posted,
             UsenetDate = usenetDate,
+            SourceIndexerName = GetSourceIndexerName(item, attrs),
             Grabs = ParseNonNegInt(GetAttr(attrs, "grabs")),
             Comments = ParseNonNegInt(GetAttr(attrs, "comments")),
             Password = ParseNonNegInt(GetAttr(attrs, "password")),
@@ -167,6 +168,28 @@ public class NewznabClient(
 
     private static string? GetAttr(Dictionary<string, string> attrs, string name) =>
         attrs.TryGetValue(name, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+
+    private static string? GetSourceIndexerName(XElement item, Dictionary<string, string> attrs)
+    {
+        foreach (var name in ["sourceIndexerName", "hydraIndexerName", "indexer", "provider"])
+        {
+            if (GetAttr(attrs, name) is { } value)
+            {
+                return value;
+            }
+        }
+
+        foreach (var elementName in ["jackettindexer", "source", "indexer", "provider"])
+        {
+            var value = item.Element(elementName)?.Value;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
 
     private static int? ParseNonNegInt(string? raw)
     {
@@ -183,6 +206,7 @@ public class NewznabClient(
         public long Size { get; init; }
         public DateTimeOffset? Posted { get; init; }
         public DateTimeOffset? UsenetDate { get; init; }
+        public string? SourceIndexerName { get; init; }
         public int? Grabs { get; init; }
         public int? Comments { get; init; }
         public int? Password { get; init; }

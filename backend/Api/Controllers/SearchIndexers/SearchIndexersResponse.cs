@@ -8,6 +8,7 @@ public class SearchIndexersResponse : BaseApiResponse
     public class Result
     {
         public required string Indexer { get; init; }
+        public string? SourceIndexerName { get; init; }
         public required string Title { get; init; }
         public required string NzbUrl { get; init; }
         public long Size { get; init; }

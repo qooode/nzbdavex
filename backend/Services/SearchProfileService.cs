@@ -163,6 +163,7 @@ public class SearchProfileService(
             {
                 IndexerName = x.IndexerName,
                 IndexerUserAgent = x.IndexerUserAgent,
+                SourceIndexerName = x.Item.SourceIndexerName,
                 NzbUrl = x.Item.NzbUrl,
                 Title = x.Item.Title,
                 Size = x.Item.Size,

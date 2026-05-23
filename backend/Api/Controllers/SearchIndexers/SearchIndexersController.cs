@@ -35,6 +35,7 @@ public class SearchIndexersController(ConfigManager configManager, NewznabRateLi
                     .Select(i => new SearchIndexersResponse.Result
                     {
                         Indexer = x.Name,
+                        SourceIndexerName = i.SourceIndexerName,
                         Title = i.Title,
                         NzbUrl = i.NzbUrl,
                         Size = i.Size,
