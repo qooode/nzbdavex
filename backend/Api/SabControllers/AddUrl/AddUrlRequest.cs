@@ -8,15 +8,16 @@ namespace NzbWebDAV.Api.SabControllers.AddUrl;
 
 public class AddUrlRequest() : AddFileRequest
 {
-    private static readonly HttpClient HttpClientInstance = InitializeHttpClient();
     private const int MaxAutomaticRedirections = 10;
+    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
 
     public static async Task<AddUrlRequest> New(HttpContext context, ConfigManager configManager)
     {
         var nzbUrl = context.GetRequestParam("name");
         var nzbName = context.GetRequestParam("nzbname");
         var userAgent = configManager.GetUserAgent();
-        var nzbFile = await GetNzbFile(nzbUrl, nzbName, userAgent).ConfigureAwait(false);
+        var proxyUrl = configManager.GetIndexerConfig().ProxyUrl;
+        var nzbFile = await GetNzbFile(nzbUrl, nzbName, userAgent, proxyUrl).ConfigureAwait(false);
         return new AddUrlRequest()
         {
             FileName = nzbFile.FileName,
@@ -29,7 +30,7 @@ public class AddUrlRequest() : AddFileRequest
         };
     }
 
-    private static async Task<NzbFileResponse> GetNzbFile(string? url, string? nzbName, string userAgent)
+    private static async Task<NzbFileResponse> GetNzbFile(string? url, string? nzbName, string userAgent, string? proxyUrl)
     {
         try
         {
@@ -38,7 +39,7 @@ public class AddUrlRequest() : AddFileRequest
                 throw new Exception($"The url is invalid.");
 
             // fetch url
-            var response = await GetAsync(url, userAgent).ConfigureAwait(false);
+            var response = await GetAsync(url, userAgent, proxyUrl).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 throw new Exception($"Received status code {response.StatusCode}.");
 
@@ -75,12 +76,11 @@ public class AddUrlRequest() : AddFileRequest
             : $"{nzbName}.nzb";
     }
 
-    private static async Task<HttpResponseMessage> GetAsync(string url, string userAgent)
+    private static async Task<HttpResponseMessage> GetAsync(string url, string userAgent, string? proxyUrl)
     {
-        var httpClient = HttpClientInstance;
-        httpClient.DefaultRequestHeaders.Remove("User-Agent");
-        httpClient.DefaultRequestHeaders.Add("User-Agent", userAgent);
-        var response = await httpClient.GetAsync(url);
+        var httpClient = ProxyHttpClientPool.GetClient(proxyUrl);
+        using var cts = new CancellationTokenSource(FetchTimeout);
+        var response = await SendGetAsync(httpClient, url, userAgent, cts.Token).ConfigureAwait(false);
         var remainingRedirects = MaxAutomaticRedirections;
         while
         (
@@ -92,21 +92,18 @@ public class AddUrlRequest() : AddFileRequest
         {
             var redirect = response.Headers.Location;
             var redirectUri = redirect.IsAbsoluteUri ? redirect : new Uri(new Uri(url), redirect);
-            response = await httpClient.GetAsync(redirectUri);
+            response = await SendGetAsync(httpClient, redirectUri.ToString(), userAgent, cts.Token).ConfigureAwait(false);
             remainingRedirects--;
         }
 
         return response;
     }
 
-    private static HttpClient InitializeHttpClient()
+    private static Task<HttpResponseMessage> SendGetAsync(HttpClient client, string url, string userAgent, CancellationToken ct)
     {
-        var handler = new HttpClientHandler
-        {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = MaxAutomaticRedirections,
-        };
-        return new HttpClient(handler);
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        return client.SendAsync(req, ct);
     }
 
     private static string? GetFilenameFromResponseHeader(HttpResponseMessage response)
