@@ -20,7 +20,7 @@ public class NewznabClient(
     private static readonly ConcurrentDictionary<string, HttpClient> Clients = new();
     private static readonly XNamespace Newznab = "http://www.newznab.com/DTD/2010/feeds/attributes/";
 
-    private readonly string _baseUrl = baseUrl.TrimEnd('/');
+    private readonly Uri _apiEndpoint = BuildApiEndpoint(baseUrl);
     private readonly HttpClient _http = GetClient(proxyUrl);
     private readonly int _timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 30;
 
@@ -73,11 +73,57 @@ public class NewznabClient(
         return await _http.SendAsync(req, ct).ConfigureAwait(false);
     }
 
+    private static Uri BuildApiEndpoint(string rawUrl)
+    {
+        var trimmed = rawUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+            throw new ArgumentException("Indexer URL must be absolute.", nameof(rawUrl));
+
+        var builder = new UriBuilder(uri) { Fragment = "" };
+        var path = builder.Path.TrimEnd('/');
+        builder.Path = path.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+            ? path
+            : $"{path}/api";
+        return builder.Uri;
+    }
+
+    private static string BuildRequestUrl(Uri apiEndpoint, IEnumerable<KeyValuePair<string, string>> runtimeParams)
+    {
+        var runtime = runtimeParams.ToList();
+        var runtimeKeys = runtime.Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var parts = ParseFixedQuery(apiEndpoint.Query)
+            .Where(x => !runtimeKeys.Contains(x.Key))
+            .Select(x => x.RawSegment)
+            .Concat(runtime.Select(x => $"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(x.Value)}"));
+
+        var query = string.Join("&", parts);
+        var path = apiEndpoint.GetLeftPart(UriPartial.Path);
+        return query.Length == 0 ? path : $"{path}?{query}";
+    }
+
+    private static IEnumerable<FixedQueryParam> ParseFixedQuery(string query)
+    {
+        var trimmed = query.TrimStart('?');
+        if (trimmed.Length == 0) yield break;
+
+        foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separatorIndex = part.IndexOf('=');
+            var rawKey = separatorIndex >= 0 ? part[..separatorIndex] : part;
+            if (rawKey.Length == 0) continue;
+            yield return new FixedQueryParam(Uri.UnescapeDataString(rawKey.Replace("+", " ")), part);
+        }
+    }
+
     public Task<bool> TestAsync(CancellationToken ct = default)
     {
         return WithTimeoutAsync(async token =>
         {
-            var url = $"{_baseUrl}/api?t=caps&apikey={Uri.EscapeDataString(apiKey)}";
+            var url = BuildRequestUrl(_apiEndpoint, new[]
+            {
+                KeyValuePair.Create("t", "caps"),
+                KeyValuePair.Create("apikey", apiKey),
+            });
             using var resp = await GetAsync(url, token).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return false;
             var body = await resp.Content.ReadAsStringAsync(token).ConfigureAwait(false);
@@ -99,14 +145,14 @@ public class NewznabClient(
     {
         return WithTimeoutAsync(async token =>
         {
-            var parts = new List<string>
+            var runtimeParams = new List<KeyValuePair<string, string>>
             {
-                $"apikey={Uri.EscapeDataString(apiKey)}",
-                "extended=1",
+                KeyValuePair.Create("apikey", apiKey),
+                KeyValuePair.Create("extended", "1"),
             };
             foreach (var (k, v) in queryParams)
-                parts.Add($"{Uri.EscapeDataString(k)}={Uri.EscapeDataString(v)}");
-            var url = $"{_baseUrl}/api?{string.Join("&", parts)}";
+                runtimeParams.Add(KeyValuePair.Create(k, v));
+            var url = BuildRequestUrl(_apiEndpoint, runtimeParams);
             using var resp = await GetAsync(url, token).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
             await using var stream = await resp.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
@@ -174,6 +220,8 @@ public class NewznabClient(
         if (!int.TryParse(raw, out var n)) return null;
         return n < 0 ? 0 : n;
     }
+
+    private readonly record struct FixedQueryParam(string Key, string RawSegment);
 
     public class NewznabItem
     {
