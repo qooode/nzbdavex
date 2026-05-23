@@ -152,6 +152,14 @@ public class NewznabAdapterController(
                 item.Add(new XElement(Newznab + "attr",
                     new XAttribute("name", "usenetdate"),
                     new XAttribute("value", r.Candidate.UsenetDate.Value.ToString("R"))));
+            if (!string.IsNullOrWhiteSpace(r.Candidate.SourceIndexerName))
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "hydraIndexerName"),
+                    new XAttribute("value", r.Candidate.SourceIndexerName)));
+            if (!string.IsNullOrWhiteSpace(r.Candidate.SourceIndexerHost))
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "hydraIndexerHost"),
+                    new XAttribute("value", r.Candidate.SourceIndexerHost)));
 
             channel.Add(item);
         }

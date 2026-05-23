@@ -162,6 +162,8 @@ public class NewznabClient(
             Files = ParseNonNegInt(GetAttr(attrs, "files")),
             Group = GetAttr(attrs, "group"),
             Poster = GetAttr(attrs, "poster"),
+            SourceIndexerName = GetAttr(attrs, "hydraIndexerName"),
+            SourceIndexerHost = GetAttr(attrs, "hydraIndexerHost"),
         };
     }
 
@@ -189,5 +191,7 @@ public class NewznabClient(
         public int? Files { get; init; }
         public string? Group { get; init; }
         public string? Poster { get; init; }
+        public string? SourceIndexerName { get; init; }
+        public string? SourceIndexerHost { get; init; }
     }
 }

@@ -55,6 +55,8 @@ public class NzbResolutionCache
     {
         public required string IndexerName { get; init; }
         public required string IndexerUserAgent { get; init; }
+        public string? SourceIndexerName { get; init; }
+        public string? SourceIndexerHost { get; init; }
         public required string NzbUrl { get; init; }
         public required string Title { get; init; }
         public long Size { get; init; }

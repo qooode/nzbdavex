@@ -59,6 +59,9 @@ public class JsonSearchController(
             {
                 title = c.Title,
                 indexer = c.IndexerName,
+                sourceIndexer = c.SourceIndexerName,
+                sourceIndexerHost = c.SourceIndexerHost,
+                displayIndexer = DisplayIndexer(c),
                 sizeBytes = c.Size,
                 postedAt = c.Posted,
                 usenetDate = c.UsenetDate,
@@ -76,6 +79,12 @@ public class JsonSearchController(
             count = items.Count,
             results = items,
         });
+    }
+
+    private static string DisplayIndexer(NzbResolutionCache.Candidate c)
+    {
+        if (string.IsNullOrWhiteSpace(c.SourceIndexerName)) return c.IndexerName;
+        return $"{c.SourceIndexerName} (via {c.IndexerName})";
     }
 
     internal static void SetCors(HttpResponse response)

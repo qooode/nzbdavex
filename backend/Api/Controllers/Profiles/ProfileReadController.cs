@@ -38,9 +38,10 @@ public class ProfileReadController(
             .Select((c, i) =>
             {
                 var description = BuildDescription(c);
+                var displayIndexer = DisplayIndexer(c);
                 return new
                 {
-                    name = $"[NZB] {c.IndexerName}",
+                    name = $"[NZB] {displayIndexer}",
                     description,
                     title = description,
                     url = $"{baseUrl}/adapters/addon/{token}/play/{result.PlayTokens[i]}.mkv",
@@ -72,8 +73,14 @@ public class ProfileReadController(
     {
         var meta = new List<string> { $"💾 {FormatBytes(c.Size)}" };
         if (c.Posted is { } p) meta.Add($"📅 {FormatAge(DateTimeOffset.UtcNow - p)}");
-        meta.Add($"🌐 {c.IndexerName}");
+        meta.Add($"🌐 {DisplayIndexer(c)}");
         return $"{c.Title}\n{string.Join(" | ", meta)}";
+    }
+
+    private static string DisplayIndexer(NzbResolutionCache.Candidate c)
+    {
+        if (string.IsNullOrWhiteSpace(c.SourceIndexerName)) return c.IndexerName;
+        return $"{c.SourceIndexerName} (via {c.IndexerName})";
     }
 
     private static string FormatAge(TimeSpan a)

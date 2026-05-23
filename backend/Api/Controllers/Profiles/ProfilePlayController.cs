@@ -592,7 +592,7 @@ public class ProfilePlayController(
             ContentType = contentType,
             RequestedTitle = requestedTitle,
             CandidateTitle = c.Title,
-            IndexerName = c.IndexerName,
+            IndexerName = DisplayIndexer(c),
             Size = c.Size,
             RankIndex = rankIndex,
             Result = outcome,
@@ -602,6 +602,12 @@ public class ProfilePlayController(
             ProviderHost = providerHost,
             ContentGroupKey = contentGroupKey,
         });
+    }
+
+    private static string DisplayIndexer(NzbResolutionCache.Candidate c)
+    {
+        if (string.IsNullOrWhiteSpace(c.SourceIndexerName)) return c.IndexerName;
+        return $"{c.SourceIndexerName} (via {c.IndexerName})";
     }
 
     private string AllConfiguredProvidersDisplay()
