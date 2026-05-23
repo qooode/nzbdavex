@@ -12,9 +12,40 @@ public class NewznabClient(
 {
     private static readonly XNamespace Newznab = "http://www.newznab.com/DTD/2010/feeds/attributes/";
 
-    private readonly string _baseUrl = baseUrl.TrimEnd('/');
+    private readonly Uri _apiUri = NormalizeApiUri(baseUrl);
     private readonly HttpClient _http = ProxyHttpClientPool.GetClient(proxyUrl);
     private readonly int _timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 30;
+
+    private static Uri NormalizeApiUri(string baseUrl)
+    {
+        var uri = new Uri(baseUrl, UriKind.Absolute);
+        var pathTrimmed = uri.AbsolutePath.TrimEnd('/');
+        if (pathTrimmed.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+            || pathTrimmed.Equals("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            return new UriBuilder(uri) { Path = pathTrimmed }.Uri;
+        }
+        return new UriBuilder(uri)
+        {
+            Path = pathTrimmed.Length == 0 ? "/api" : pathTrimmed + "/api",
+        }.Uri;
+    }
+
+    private string BuildUrl(IEnumerable<KeyValuePair<string, string>> extraParams)
+    {
+        var parts = new List<string>();
+        var existing = _apiUri.Query;
+        if (!string.IsNullOrEmpty(existing))
+        {
+            if (existing.StartsWith('?')) existing = existing[1..];
+            if (!string.IsNullOrEmpty(existing)) parts.Add(existing);
+        }
+        foreach (var kv in extraParams)
+            parts.Add($"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}");
+
+        var builder = new UriBuilder(_apiUri) { Query = string.Join("&", parts) };
+        return builder.Uri.ToString();
+    }
 
     private async Task<T> WithTimeoutAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct)
     {
@@ -41,7 +72,11 @@ public class NewznabClient(
     {
         return WithTimeoutAsync(async token =>
         {
-            var url = $"{_baseUrl}/api?t=caps&apikey={Uri.EscapeDataString(apiKey)}";
+            var url = BuildUrl(new[]
+            {
+                new KeyValuePair<string, string>("t", "caps"),
+                new KeyValuePair<string, string>("apikey", apiKey),
+            });
             using var resp = await GetAsync(url, token).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return false;
             var body = await resp.Content.ReadAsStringAsync(token).ConfigureAwait(false);
@@ -63,14 +98,14 @@ public class NewznabClient(
     {
         return WithTimeoutAsync(async token =>
         {
-            var parts = new List<string>
+            var extra = new List<KeyValuePair<string, string>>
             {
-                $"apikey={Uri.EscapeDataString(apiKey)}",
-                "extended=1",
+                new("apikey", apiKey),
+                new("extended", "1"),
             };
             foreach (var (k, v) in queryParams)
-                parts.Add($"{Uri.EscapeDataString(k)}={Uri.EscapeDataString(v)}");
-            var url = $"{_baseUrl}/api?{string.Join("&", parts)}";
+                extra.Add(new KeyValuePair<string, string>(k, v));
+            var url = BuildUrl(extra);
             using var resp = await GetAsync(url, token).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
             await using var stream = await resp.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
