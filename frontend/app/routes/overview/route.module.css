@@ -23,6 +23,44 @@
     letter-spacing: -0.02em;
 }
 
+.headerActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.editBtn,
+.editBtnActive,
+.resetBtn {
+    appearance: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.editBtn:hover,
+.resetBtn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.editBtnActive {
+    background: var(--text-primary);
+    color: var(--bg-surface);
+    border-color: var(--text-primary);
+}
+
+.resetBtn {
+    color: var(--text-muted);
+}
+
 .windowToggle {
     display: inline-flex;
     background: var(--bg-elevated);

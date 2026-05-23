@@ -345,6 +345,7 @@ export type QueueSlot = {
 
 export type ProviderUsage = {
     host: string,
+    nickname?: string | null,
     segments: number,
 }
 
@@ -393,6 +394,7 @@ export type WatchdogEntry = {
     durationMs: number,
     isWinner: boolean,
     providerHost?: string | null,
+    providerNickname?: string | null,
 }
 
 export type DirectoryItem = {
@@ -552,6 +554,7 @@ export type ThroughputPoint = {
 
 export type ProviderRow = {
     provider: string,
+    nickname?: string | null,
     articles: number,
     bytesFetched: number,
     errors: number,
@@ -600,7 +603,7 @@ export type ActiveRead = {
     bytesRead: number,
     currentOffset: number,
     fileSize: number | null,
-    providers: { host: string, segments: number }[],
+    providers: { host: string, nickname?: string | null, segments: number }[],
 }
 
 export type LiveStatsMessage = {

@@ -32,11 +32,16 @@ public class GetQueueController(
 
         // hosts of every configured Usenet provider — used to show idle providers
         // alongside active ones for the in-progress download
-        var configuredHosts = configManager.GetUsenetProviderConfig().Providers
+        var configuredProviders = configManager.GetUsenetProviderConfig().Providers;
+        var configuredHosts = configuredProviders
             .Select(p => p.Host)
             .Where(h => !string.IsNullOrEmpty(h))
             .Distinct()
             .ToList();
+        var nicknamesByHost = configuredProviders
+            .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
+            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
 
         // get slots
         var slots = queueItems
@@ -55,7 +60,7 @@ public class GetQueueController(
                     foreach (var kv in providerUsage) merged[kv.Key] = kv.Value;
                     providerUsage = merged;
                 }
-                return GetQueueResponse.QueueSlot.FromQueueItem(queueItem!, index, percentage, status, providerUsage);
+                return GetQueueResponse.QueueSlot.FromQueueItem(queueItem!, index, percentage, status, providerUsage, nicknamesByHost);
             })
             .ToList();
 

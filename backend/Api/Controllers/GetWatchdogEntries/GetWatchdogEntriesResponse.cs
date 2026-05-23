@@ -25,5 +25,6 @@ public class GetWatchdogEntriesResponse : BaseApiResponse
         [JsonPropertyName("durationMs")] public required int DurationMs { get; init; }
         [JsonPropertyName("isWinner")] public required bool IsWinner { get; init; }
         [JsonPropertyName("providerHost")] public string? ProviderHost { get; init; }
+        [JsonPropertyName("providerNickname")] public string? ProviderNickname { get; init; }
     }
 }

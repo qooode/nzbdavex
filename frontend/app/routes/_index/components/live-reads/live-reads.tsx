@@ -5,7 +5,7 @@ import { useNavigate } from "react-router";
 
 const activeReadsTopic = { ar: 'state' };
 
-type ProviderUsage = { host: string; segments: number };
+type ProviderUsage = { host: string; nickname?: string | null; segments: number };
 type Read = {
     id: string;
     fileName: string;
@@ -88,7 +88,7 @@ function ReadRow({ item }: { item: Read }) {
                     : item.providers.map((p, i) => (
                         <span key={p.host} className={styles.providersEntry}>
                             {i > 0 && <span className={styles.providersSep}>·</span>}
-                            <span className={styles.providersHost} title={p.host}>{stripHost(p.host)}</span>
+                            <span className={styles.providersHost} title={p.host}>{p.nickname?.trim() || stripHost(p.host)}</span>
                             {totalSegments > 0 && (
                                 <span className={styles.providersPct}>
                                     {Math.round((p.segments / totalSegments) * 100)}%

@@ -221,7 +221,7 @@ function ClickCard({ group }: { group: ClickGroup }) {
                                 <td className={styles.colRank}>{a.rankIndex + 1}</td>
                                 <td className={styles.colCandidate} title={a.candidateTitle}>{a.candidateTitle || "—"}</td>
                                 <td className={styles.colIndexer}>{a.indexerName || "—"}</td>
-                                <td className={styles.colProvider} title={a.providerHost ?? undefined}>{formatProviderShort(a.providerHost)}</td>
+                                <td className={styles.colProvider} title={a.providerHost ?? undefined}>{a.providerNickname?.trim() || formatProviderShort(a.providerHost)}</td>
                                 <td className={styles.colSize}>{formatBytes(a.size)}</td>
                                 <td className={styles.colOutcome}>
                                     <OutcomeBadge outcome={a.outcome} winner={a.isWinner} />
@@ -243,7 +243,7 @@ function ClickCard({ group }: { group: ClickGroup }) {
                             </div>
                             <div className={styles.attemptCardTitle} title={a.candidateTitle}>{a.candidateTitle || "—"}</div>
                             <div className={styles.attemptCardMeta}>
-                                <span title={a.providerHost ?? undefined}>📡 {formatProviderShort(a.providerHost)}</span>
+                                <span title={a.providerHost ?? undefined}>📡 {a.providerNickname?.trim() || formatProviderShort(a.providerHost)}</span>
                                 <span className={styles.attemptCardMetaDot}>·</span>
                                 <span>{formatBytes(a.size)}</span>
                                 <span className={styles.attemptCardMetaDot}>·</span>

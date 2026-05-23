@@ -28,6 +28,7 @@ public class GetProviderUsageController(
                 {
                     Index = index,
                     Host = provider.Host,
+                    Nickname = provider.Nickname,
                     BytesUsed = used,
                     ByteLimit = provider.ByteLimit,
                     OverLimit = ProviderUsageHelper.IsOverLimit(bytesTracker, provider),

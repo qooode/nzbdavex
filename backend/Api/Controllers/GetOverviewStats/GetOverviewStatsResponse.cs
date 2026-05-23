@@ -39,6 +39,7 @@ public class GetOverviewStatsResponse
     public class ProviderRow
     {
         public string Provider { get; init; } = "";
+        public string? Nickname { get; init; }
         public long Articles { get; init; }
         public long BytesFetched { get; init; }
         public long Errors { get; init; }

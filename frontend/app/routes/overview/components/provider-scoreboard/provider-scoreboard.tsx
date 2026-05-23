@@ -42,7 +42,7 @@ export function ProviderScoreboard({ providers, window }: ProviderScoreboardProp
                                     <td>
                                         <div className={styles.providerCell} title={p.provider}>
                                             <span className={styles.dot} />
-                                            <span className={styles.providerName}>{p.provider}</span>
+                                            <span className={styles.providerName}>{p.nickname?.trim() || p.provider}</span>
                                         </div>
                                     </td>
                                     <td className={styles.sparkCol}>

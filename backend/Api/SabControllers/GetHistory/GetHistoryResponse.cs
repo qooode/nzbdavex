@@ -62,7 +62,8 @@ public class GetHistoryResponse : SabBaseResponse
             HistoryItem historyItem,
             DavItem? downloadFolder,
             ConfigManager configManager,
-            IReadOnlyDictionary<string, long>? providerUsage = null
+            IReadOnlyDictionary<string, long>? providerUsage = null,
+            IReadOnlyDictionary<string, string?>? nicknamesByHost = null
         )
         {
             return new HistorySlot()
@@ -81,7 +82,12 @@ public class GetHistoryResponse : SabBaseResponse
                 Providers = providerUsage is { Count: > 0 }
                     ? providerUsage
                         .OrderByDescending(kv => kv.Value)
-                        .Select(kv => new ProviderUsage { Host = kv.Key, Segments = kv.Value })
+                        .Select(kv => new ProviderUsage
+                        {
+                            Host = kv.Key,
+                            Nickname = nicknamesByHost is not null && nicknamesByHost.TryGetValue(kv.Key, out var n) ? n : null,
+                            Segments = kv.Value,
+                        })
                         .ToList()
                     : null,
             };
@@ -90,6 +96,7 @@ public class GetHistoryResponse : SabBaseResponse
         public class ProviderUsage
         {
             [JsonPropertyName("host")] public required string Host { get; init; }
+            [JsonPropertyName("nickname")] public string? Nickname { get; init; }
             [JsonPropertyName("segments")] public required long Segments { get; init; }
         }
 

@@ -12,6 +12,7 @@ declare const styles: {
   readonly "header-action-button": string;
   readonly "delete": string;
   readonly "provider-host": string;
+  readonly "provider-host-secondary": string;
   readonly "provider-port": string;
   readonly "provider-type-badge": string;
   readonly "disabled": string;

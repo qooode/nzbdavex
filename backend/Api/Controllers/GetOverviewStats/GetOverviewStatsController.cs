@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
 using NzbWebDAV.Database.Models.Metrics;
@@ -13,7 +14,8 @@ namespace NzbWebDAV.Api.Controllers.GetOverviewStats;
 public class GetOverviewStatsController(
     DavDatabaseClient davDb,
     ActiveReadRegistry registry,
-    LiveStatsBroadcaster liveStats
+    LiveStatsBroadcaster liveStats,
+    ConfigManager configManager
 ) : BaseApiController
 {
     private const long OneMinute = 60_000;
@@ -41,6 +43,11 @@ public class GetOverviewStatsController(
         var windowStart = window == GetOverviewStatsRequest.OverviewWindow.AllTime
             ? 0
             : nowMs - windowMs;
+
+        var nicknamesByHost = configManager.GetUsenetProviderConfig().Providers
+            .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
+            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
 
         await using var metrics = new MetricsDbContext();
         var useRollups =
@@ -73,7 +80,7 @@ public class GetOverviewStatsController(
 
             liveTiles = BuildLiveTiles(articlesLastMinute: 0, errorsLastMinute: 0);
             throughput = BuildThroughputFromHourly(hours.Select(h => (h.Hour, h.Articles, h.Errors, h.BytesFetched)), sessions.Select(s => (s.EndedAt, s.BytesServed)), bucketSize);
-            providers = BuildProvidersFromHourly(hours, windowStart, bucketSize, nowMs);
+            providers = BuildProvidersFromHourly(hours, windowStart, bucketSize, nowMs, nicknamesByHost);
             heatmap = new GetOverviewStatsResponse.HeatmapBlock();
             latency = new GetOverviewStatsResponse.LatencyBlock();
             errors = new List<GetOverviewStatsResponse.ErrorSlice>();
@@ -101,7 +108,7 @@ public class GetOverviewStatsController(
 
             liveTiles = BuildLiveTiles(articlesLastMinute, errorsLastMinute);
             throughput = BuildThroughput(fetches.Select(f => (f.At, f.Status)), sessions.Select(s => (s.EndedAt, s.BytesServed)), bucketSize);
-            providers = BuildProviders(fetches, perMinuteBytes, windowStart, bucketSize, window);
+            providers = BuildProviders(fetches, perMinuteBytes, windowStart, bucketSize, window, nicknamesByHost);
             heatmap = BuildHeatmap(fetches.Select(f => f.At), nowMs);
             latency = BuildLatency(fetches.Where(f => f.Status == SegmentFetch.FetchStatus.Ok).Select(f => f.DurationMs));
             errors = BuildErrors(fetches.Select(f => f.Status));
@@ -224,7 +231,8 @@ public class GetOverviewStatsController(
         IReadOnlyDictionary<string, long> bytesByProvider,
         long windowStart,
         long bucketSize,
-        GetOverviewStatsRequest.OverviewWindow window) where T : class
+        GetOverviewStatsRequest.OverviewWindow window,
+        IReadOnlyDictionary<string, string?> nicknamesByHost) where T : class
     {
         var is7d = window == GetOverviewStatsRequest.OverviewWindow.Last7Days;
         var sparkBuckets = is7d ? 168 : 24;
@@ -250,6 +258,7 @@ public class GetOverviewStatsController(
             .Select(kv => new GetOverviewStatsResponse.ProviderRow
             {
                 Provider = kv.Key,
+                Nickname = nicknamesByHost.GetValueOrDefault(kv.Key),
                 Articles = kv.Value.Articles,
                 BytesFetched = bytesByProvider.GetValueOrDefault(kv.Key, 0L),
                 Errors = kv.Value.Errors,
@@ -266,7 +275,8 @@ public class GetOverviewStatsController(
         IEnumerable<dynamic> hours,
         long windowStart,
         long bucketSize,
-        long nowMs)
+        long nowMs,
+        IReadOnlyDictionary<string, string?> nicknamesByHost)
     {
         // Spark for 30d/all-time rolls up to daily.
         var totalSpan = nowMs - windowStart;
@@ -294,6 +304,7 @@ public class GetOverviewStatsController(
             .Select(kv => new GetOverviewStatsResponse.ProviderRow
             {
                 Provider = kv.Key,
+                Nickname = nicknamesByHost.GetValueOrDefault(kv.Key),
                 Articles = kv.Value.Articles,
                 BytesFetched = kv.Value.Bytes,
                 Errors = kv.Value.Errors,

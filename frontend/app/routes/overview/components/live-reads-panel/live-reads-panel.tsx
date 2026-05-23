@@ -96,16 +96,19 @@ export function LiveReadsPanel() {
                             </div>
                             {r.providers.length > 0 && (
                                 <div className={styles.providerStrip}>
-                                    {r.providers.slice(0, 6).map((p, i) => (
-                                        <span
-                                            key={p.host}
-                                            className={`${styles.providerChip} ${i === 0 ? styles.providerChipPrimary : ""}`}
-                                            title={`${p.host}: ${p.segments} segments`}
-                                        >
-                                            <span className={styles.providerChipHost}>{p.host}</span>
-                                            <span className={styles.providerChipCount}>{p.segments}</span>
-                                        </span>
-                                    ))}
+                                    {r.providers.slice(0, 6).map((p, i) => {
+                                        const label = p.nickname?.trim() || p.host;
+                                        return (
+                                            <span
+                                                key={p.host}
+                                                className={`${styles.providerChip} ${i === 0 ? styles.providerChipPrimary : ""}`}
+                                                title={`${label} (${p.host}): ${p.segments} segments`}
+                                            >
+                                                <span className={styles.providerChipHost}>{label}</span>
+                                                <span className={styles.providerChipCount}>{p.segments}</span>
+                                            </span>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

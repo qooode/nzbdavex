@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
+using NzbWebDAV.Config;
 using NzbWebDAV.Database.Models.Metrics;
 using NzbWebDAV.Services.Metrics;
 using NzbWebDAV.Utils;
@@ -18,7 +19,8 @@ public class ActiveReadsBroadcaster(
     ActiveReadRegistry registry,
     ProviderUsageTracker usageTracker,
     WebsocketManager websocketManager,
-    MetricsWriter metricsWriter
+    MetricsWriter metricsWriter,
+    ConfigManager configManager
 ) : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(1);
@@ -78,6 +80,10 @@ public class ActiveReadsBroadcaster(
         if (entries.Count == 0 && _wasEmpty) return;
 
         var usage = usageTracker.SnapshotMany(entries.Select(e => e.Id));
+        var nicknamesByHost = configManager.GetUsenetProviderConfig().Providers
+            .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
+            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
         var snapshot = new
         {
             reads = entries.Select(e => new
@@ -91,7 +97,12 @@ public class ActiveReadsBroadcaster(
                 currentOffset = Interlocked.Read(ref e.CurrentOffset),
                 fileSize = e.FileSize,
                 providers = (usage.GetValueOrDefault(e.Id) ?? new Dictionary<string, long>())
-                    .Select(kv => new { host = kv.Key, segments = kv.Value })
+                    .Select(kv => new
+                    {
+                        host = kv.Key,
+                        nickname = nicknamesByHost.GetValueOrDefault(kv.Key),
+                        segments = kv.Value,
+                    })
                     .OrderByDescending(p => p.segments)
                     .ToList()
             }).ToList()

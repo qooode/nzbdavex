@@ -26,6 +26,9 @@ type ConnectionDetails = {
     User: string;
     Pass: string;
     MaxConnections: number;
+    // Optional user-set label. Shown in the UI in place of Host when present;
+    // Host stays the real NNTP target.
+    Nickname?: string;
     PreviousType?: ProviderType;
     // null/0 = uncapped. Stored as bytes; the modal lets the user type a
     // friendlier MB/GB/TB value that gets converted on save.
@@ -43,6 +46,7 @@ type ConnectionDetails = {
 type ProviderUsage = {
     index: number;
     host: string;
+    nickname?: string | null;
     bytesUsed: number;
     byteLimit: number | null;
     overLimit: boolean;
@@ -169,7 +173,8 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
     const handleResetUsage = useCallback((index: number) => {
         const current = providerConfig.Providers[index];
         if (!current) return;
-        if (!confirm(`Reset bytes-used counter for "${current.Host}" to zero?\n\nThis only rewinds the gauge for this provider's data cap. Historical metrics and graphs are untouched. Takes effect after you save settings.`)) return;
+        const label = current.Nickname?.trim() || current.Host;
+        if (!confirm(`Reset bytes-used counter for "${label}" to zero?\n\nThis only rewinds the gauge for this provider's data cap. Historical metrics and graphs are untouched. Takes effect after you save settings.`)) return;
         const updated: ConnectionDetails = {
             ...current,
             BytesUsedOffset: 0,
@@ -277,9 +282,14 @@ export function UsenetSettings({ config, setNewConfig }: UsenetSettingsProps) {
                                     <div className={styles["provider-header"]}>
                                         <div className={styles["provider-header-content"]}>
                                             <div className={styles["provider-host"]}>
-                                                {provider.Host}
+                                                {provider.Nickname?.trim() || provider.Host}
                                                 {isDisabled && <span className={styles["provider-disabled-badge"]}>Disabled</span>}
                                             </div>
+                                            {provider.Nickname?.trim() && (
+                                                <div className={styles["provider-host-secondary"]}>
+                                                    {provider.Host}
+                                                </div>
+                                            )}
                                             <div className={styles["provider-port"]}>
                                                 Port {provider.Port}
                                             </div>
@@ -492,6 +502,7 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
     const initialLimit = bytesToValueAndUnit(provider?.ByteLimit);
     const initialUsed = bytesToValueAndUnit(provider?.BytesUsedOffset);
 
+    const [nickname, setNickname] = useState(provider?.Nickname || "");
     const [host, setHost] = useState(provider?.Host || "");
     const [port, setPort] = useState(provider?.Port?.toString() || "");
     const [useSsl, setUseSsl] = useState(provider?.UseSsl ?? true);
@@ -512,6 +523,7 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
         if (show) {
             const lim = bytesToValueAndUnit(provider?.ByteLimit);
             const used = bytesToValueAndUnit(provider?.BytesUsedOffset);
+            setNickname(provider?.Nickname || "");
             setHost(provider?.Host || "");
             setPort(provider?.Port?.toString() || "");
             setUseSsl(provider?.UseSsl ?? true);
@@ -593,6 +605,7 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
             ? Date.now()
             : (provider?.BytesUsedResetAt ?? 0);
 
+        const trimmedNickname = nickname.trim();
         onSave({
             Type: type,
             Host: host,
@@ -601,12 +614,13 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
             User: user,
             Pass: pass,
             MaxConnections: parseInt(maxConnections, 10),
+            Nickname: trimmedNickname === "" ? undefined : trimmedNickname,
             PreviousType: type === ProviderType.Disabled ? provider?.PreviousType : undefined,
             ByteLimit: byteLimit,
             BytesUsedOffset: offsetToPersist,
             BytesUsedResetAt: resetAtToPersist,
         });
-    }, [type, host, port, useSsl, user, pass, maxConnections, provider, isEditing, limitValue, limitUnit, initialUsedValue, initialUsedUnit, onSave]);
+    }, [type, host, port, useSsl, user, pass, maxConnections, nickname, provider, isEditing, limitValue, limitUnit, initialUsedValue, initialUsedUnit, onSave]);
 
     const handleOverlayClick = useCallback((e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
@@ -638,6 +652,23 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
 
                 <div className={styles["modal-body"]}>
                     <div className={styles["form-grid"]}>
+                        <div className={`${styles["form-group"]} ${styles["full-width"]}`}>
+                            <label htmlFor="provider-nickname" className={styles["form-label"]}>
+                                Nickname (optional)
+                            </label>
+                            <input
+                                type="text"
+                                id="provider-nickname"
+                                className={styles["form-input"]}
+                                placeholder="e.g. Eweka — Main"
+                                value={nickname}
+                                onChange={(e) => setNickname(e.target.value)}
+                            />
+                            <div className={styles["form-hint"]}>
+                                Friendly label shown in the UI in place of the hostname.
+                            </div>
+                        </div>
+
                         <div className={styles["form-group"]}>
                             <label htmlFor="provider-host" className={styles["form-label"]}>
                                 Host
