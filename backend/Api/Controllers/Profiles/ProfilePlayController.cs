@@ -37,7 +37,7 @@ public class ProfilePlayController(
     VariantResolver variantResolver
 ) : ControllerBase
 {
-    private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly TimeSpan NzbFetchTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
     // Tracks the last time a Play click touched a watchdog-created queue item.
@@ -693,9 +693,12 @@ public class ProfilePlayController(
 
             using var req = new HttpRequestMessage(HttpMethod.Get, c.NzbUrl);
             req.Headers.TryAddWithoutValidation("User-Agent", c.IndexerUserAgent);
-            using var resp = await HttpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
+            var client = ProxyHttpClientPool.GetClient(c.ProxyUrl);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(NzbFetchTimeout);
+            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return null;
-            return await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            return await resp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
         }
         catch (Exception e) when (!e.IsCancellationException())
         {

@@ -1,6 +1,5 @@
-using System.Collections.Concurrent;
-using System.Net;
 using System.Xml.Linq;
+using NzbWebDAV.Utils;
 
 namespace NzbWebDAV.Clients.Indexers;
 
@@ -11,46 +10,11 @@ public class NewznabClient(
     string? proxyUrl = null,
     int timeoutSeconds = 30)
 {
-    // One HttpClient per unique proxy URL (or "" for no proxy). Building a fresh client
-    // per request would leak sockets; sharing a single static one prevents proxy changes
-    // from taking effect. The cache stays small (one entry per distinct proxy).
-    // Timeout is left infinite at the HttpClient level — the actual per-request budget
-    // is enforced via a linked CancellationToken below, since the cached client is
-    // shared across indexers that may each set a different timeout.
-    private static readonly ConcurrentDictionary<string, HttpClient> Clients = new();
     private static readonly XNamespace Newznab = "http://www.newznab.com/DTD/2010/feeds/attributes/";
 
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
-    private readonly HttpClient _http = GetClient(proxyUrl);
+    private readonly HttpClient _http = ProxyHttpClientPool.GetClient(proxyUrl);
     private readonly int _timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 30;
-
-    private static HttpClient GetClient(string? proxyUrl)
-    {
-        var key = NormalizeProxy(proxyUrl) ?? "";
-        return Clients.GetOrAdd(key, k =>
-        {
-            var handler = new HttpClientHandler();
-            if (k.Length > 0 && Uri.TryCreate(k, UriKind.Absolute, out var uri))
-            {
-                handler.Proxy = new WebProxy(uri) { BypassProxyOnLocal = false };
-                handler.UseProxy = true;
-            }
-            else
-            {
-                handler.UseProxy = false;
-            }
-            return new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
-        });
-    }
-
-    private static string? NormalizeProxy(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        var trimmed = raw.Trim();
-        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) return null;
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return null;
-        return uri.ToString();
-    }
 
     private async Task<T> WithTimeoutAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct)
     {

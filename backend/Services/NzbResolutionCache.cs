@@ -62,6 +62,7 @@ public class NzbResolutionCache
         public DateTimeOffset? UsenetDate { get; init; }
         public int? Grabs { get; init; }
         public int? Password { get; init; }
+        public string? ProxyUrl { get; init; }
     }
 
     public class Entry

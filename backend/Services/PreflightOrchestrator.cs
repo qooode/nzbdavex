@@ -4,6 +4,7 @@ using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
 using NzbWebDAV.Extensions;
+using NzbWebDAV.Utils;
 using Serilog;
 
 namespace NzbWebDAV.Services;
@@ -17,7 +18,7 @@ public class PreflightOrchestrator(
     PreflightSessionRegistry sessionRegistry,
     CandidateNegativeCache negativeCache)
 {
-    private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(8);
 
     public void Start(
         string profileToken,
@@ -125,9 +126,12 @@ public class PreflightOrchestrator(
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, c.NzbUrl);
             req.Headers.TryAddWithoutValidation("User-Agent", c.IndexerUserAgent);
-            using var resp = await HttpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
+            var client = ProxyHttpClientPool.GetClient(c.ProxyUrl);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(FetchTimeout);
+            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return null;
-            return await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            return await resp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
         }
         catch (Exception e) when (!e.IsCancellationException())
         {

@@ -102,7 +102,7 @@ public class SearchProfileService(
                 var client = new NewznabClient(x.Url, x.ApiKey, ua, proxy, timeout);
                 var items = await client.QueryAsync(queryParams, ct).ConfigureAwait(false);
                 var filtered = IndexerResultFilter.Apply(items, x.Filter, now);
-                return filtered.Select(i => new IndexerHit(x.Name, ua, i));
+                return filtered.Select(i => new IndexerHit(x.Name, ua, proxy, i));
             }
             catch (Exception e)
             {
@@ -170,6 +170,7 @@ public class SearchProfileService(
                 UsenetDate = x.Item.UsenetDate,
                 Grabs = x.Item.Grabs,
                 Password = x.Item.Password,
+                ProxyUrl = x.IndexerProxyUrl,
             })
             .ToList();
 
@@ -203,7 +204,7 @@ public class SearchProfileService(
         return digits.All(char.IsDigit) ? digits : null;
     }
 
-    private record IndexerHit(string IndexerName, string IndexerUserAgent, NewznabClient.NewznabItem Item);
+    private record IndexerHit(string IndexerName, string IndexerUserAgent, string? IndexerProxyUrl, NewznabClient.NewznabItem Item);
 
     public class SearchResult
     {

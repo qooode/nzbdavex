@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using NzbWebDAV.Services;
+using NzbWebDAV.Utils;
 using Serilog;
 
 namespace NzbWebDAV.Api.Controllers.Profiles.Adapters;
@@ -11,10 +12,7 @@ public class NzbProxyController(
     NzbResolutionCache cache
 ) : ControllerBase
 {
-    private static readonly HttpClient HttpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(60),
-    };
+    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(60);
 
     [HttpGet]
     public async Task<IActionResult> Get(string token, string playToken)
@@ -38,15 +36,18 @@ public class NzbProxyController(
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, candidate.NzbUrl);
             req.Headers.TryAddWithoutValidation("User-Agent", candidate.IndexerUserAgent);
-            using var resp = await HttpClient
-                .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, HttpContext.RequestAborted)
+            var client = ProxyHttpClientPool.GetClient(candidate.ProxyUrl);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
+            cts.CancelAfter(FetchTimeout);
+            using var resp = await client
+                .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token)
                 .ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
                 return StatusCode((int)resp.StatusCode, "Source indexer failed to return the NZB.");
             }
 
-            var bytes = await resp.Content.ReadAsByteArrayAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+            var bytes = await resp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
             Response.Headers["Content-Disposition"] =
                 $"attachment; filename=\"{SanitizeFileName(candidate.Title)}.nzb\"";
             return File(bytes, "application/x-nzb");
