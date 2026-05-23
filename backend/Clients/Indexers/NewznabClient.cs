@@ -19,6 +19,24 @@ public class NewznabClient(
     // shared across indexers that may each set a different timeout.
     private static readonly ConcurrentDictionary<string, HttpClient> Clients = new();
     private static readonly XNamespace Newznab = "http://www.newznab.com/DTD/2010/feeds/attributes/";
+    private static readonly string[] SourceIndexerNameAttrKeys =
+    [
+        "sourceIndexerName",
+        "hydraIndexerName",
+        "indexerName",
+        "indexer",
+        "source",
+        "provider",
+        "tracker",
+    ];
+    private static readonly string[] SourceIndexerHostAttrKeys =
+    [
+        "sourceIndexerHost",
+        "hydraIndexerHost",
+        "sourceHost",
+        "providerHost",
+        "host",
+    ];
 
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
     private readonly HttpClient _http = GetClient(proxyUrl);
@@ -162,9 +180,20 @@ public class NewznabClient(
             Files = ParseNonNegInt(GetAttr(attrs, "files")),
             Group = GetAttr(attrs, "group"),
             Poster = GetAttr(attrs, "poster"),
-            SourceIndexerName = GetAttr(attrs, "hydraIndexerName"),
-            SourceIndexerHost = GetAttr(attrs, "hydraIndexerHost"),
+            SourceIndexerName = GetFirstAttr(attrs, SourceIndexerNameAttrKeys),
+            SourceIndexerHost = GetFirstAttr(attrs, SourceIndexerHostAttrKeys),
         };
+    }
+
+    private static string? GetFirstAttr(Dictionary<string, string> attrs, IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            var value = GetAttr(attrs, name);
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+        }
+
+        return null;
     }
 
     private static string? GetAttr(Dictionary<string, string> attrs, string name) =>
