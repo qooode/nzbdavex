@@ -83,7 +83,7 @@ export function RemoveUnlinkedFiles({ savedConfig }: RemoveUnlinkedFilesProps) {
                     <span style={{ fontWeight: 'bold' }}>Danger</span>
                     <ul className={styles.list}>
                         <li className={styles["list-item"]}>
-                            Make a backup of your nzbdavex database prior to running this task
+                            Make a backup of your davex database prior to running this task
                         </li>
                         <li className={styles["list-item"]}>
                             Files will be removed from the webdav and will not be recoverable without a backup
