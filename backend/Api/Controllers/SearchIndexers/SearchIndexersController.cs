@@ -58,6 +58,10 @@ public class SearchIndexersController(
                         NzbUrl = i.NzbUrl,
                         Size = i.Size,
                         Posted = i.Posted,
+                        SourceIndexer = i.SourceIndexerName,
+                        Language = i.Language,
+                        Subs = i.Subs,
+                        InfoHash = i.InfoHash,
                     }).ToList();
                 return (Status: new SearchIndexersResponse.IndexerStatus
                 {

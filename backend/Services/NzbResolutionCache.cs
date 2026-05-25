@@ -63,6 +63,10 @@ public class NzbResolutionCache
         public int? Grabs { get; init; }
         public int? Password { get; init; }
         public string? ProxyUrl { get; init; }
+        public string? SourceIndexerName { get; init; }
+        public string? Language { get; init; }
+        public string? Subs { get; init; }
+        public string? InfoHash { get; init; }
     }
 
     public class Entry

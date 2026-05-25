@@ -273,6 +273,10 @@ public class SearchProfileService(
                 Grabs = x.Item.Grabs,
                 Password = x.Item.Password,
                 ProxyUrl = x.IndexerProxyUrl,
+                SourceIndexerName = x.Item.SourceIndexerName,
+                Language = x.Item.Language,
+                Subs = x.Item.Subs,
+                InfoHash = x.Item.InfoHash,
             })
             .ToList();
 

@@ -59,11 +59,15 @@ public class JsonSearchController(
             {
                 title = c.Title,
                 indexer = c.IndexerName,
+                sourceIndexer = c.SourceIndexerName,
                 sizeBytes = c.Size,
                 postedAt = c.Posted,
                 usenetDate = c.UsenetDate,
                 grabs = c.Grabs,
                 passwordFlag = c.Password,
+                language = c.Language,
+                subs = c.Subs,
+                infoHash = c.InfoHash,
                 playUrl = $"{baseUrl}/api/search/{token}/play/{result.PlayTokens[i]}.mkv",
             })
             .ToList();

@@ -12,6 +12,10 @@ public class SearchIndexersResponse : BaseApiResponse
         public required string NzbUrl { get; init; }
         public long Size { get; init; }
         public DateTimeOffset? Posted { get; init; }
+        public string? SourceIndexer { get; init; }
+        public string? Language { get; init; }
+        public string? Subs { get; init; }
+        public string? InfoHash { get; init; }
     }
 
     public class IndexerStatus

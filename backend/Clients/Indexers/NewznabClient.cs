@@ -147,6 +147,16 @@ public class NewznabClient(
         if (!string.IsNullOrEmpty(udRaw) && DateTimeOffset.TryParse(udRaw, out var ud))
             usenetDate = ud;
 
+        var sourceIndexerName =
+            GetAttr(attrs, "sourceIndexerName")
+            ?? GetAttr(attrs, "hydraIndexerName")
+            ?? GetAttr(attrs, "indexer")
+            ?? GetAttr(attrs, "provider")
+            ?? GetElementText(item, "jackettindexer")
+            ?? GetElementText(item, "source")
+            ?? GetElementText(item, "indexer")
+            ?? GetElementText(item, "provider");
+
         return new NewznabItem
         {
             Title = item.Element("title")?.Value ?? "",
@@ -161,7 +171,18 @@ public class NewznabClient(
             Files = ParseNonNegInt(GetAttr(attrs, "files")),
             Group = GetAttr(attrs, "group"),
             Poster = GetAttr(attrs, "poster"),
+            SourceIndexerName = sourceIndexerName,
+            Language = GetAttr(attrs, "language"),
+            Subs = GetAttr(attrs, "subs"),
+            InfoHash = GetAttr(attrs, "infohash"),
         };
+    }
+
+    private static string? GetElementText(XElement item, string localName)
+    {
+        var el = item.Elements().FirstOrDefault(x => string.Equals(x.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase));
+        var v = el?.Value;
+        return string.IsNullOrWhiteSpace(v) ? null : v.Trim();
     }
 
     private static string? GetAttr(Dictionary<string, string> attrs, string name) =>
@@ -188,5 +209,9 @@ public class NewznabClient(
         public int? Files { get; init; }
         public string? Group { get; init; }
         public string? Poster { get; init; }
+        public string? SourceIndexerName { get; init; }
+        public string? Language { get; init; }
+        public string? Subs { get; init; }
+        public string? InfoHash { get; init; }
     }
 }

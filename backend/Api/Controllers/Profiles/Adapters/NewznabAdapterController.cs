@@ -120,7 +120,10 @@ public class NewznabAdapterController(
             new XElement(Atom + "link",
                 new XAttribute("href", $"{baseUrl}/adapters/newznab/{token}/api"),
                 new XAttribute("rel", "self"),
-                new XAttribute("type", "application/rss+xml")));
+                new XAttribute("type", "application/rss+xml")),
+            new XElement(Newznab + "response",
+                new XAttribute("offset", "0"),
+                new XAttribute("total", items.Count.ToString())));
 
         foreach (var r in items)
         {
@@ -152,6 +155,28 @@ public class NewznabAdapterController(
                 item.Add(new XElement(Newznab + "attr",
                     new XAttribute("name", "usenetdate"),
                     new XAttribute("value", r.Candidate.UsenetDate.Value.ToString("R"))));
+
+            if (!string.IsNullOrWhiteSpace(r.Candidate.SourceIndexerName))
+            {
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "hydraIndexerName"),
+                    new XAttribute("value", r.Candidate.SourceIndexerName)));
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "sourceIndexerName"),
+                    new XAttribute("value", r.Candidate.SourceIndexerName)));
+            }
+            if (!string.IsNullOrWhiteSpace(r.Candidate.Language))
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "language"),
+                    new XAttribute("value", r.Candidate.Language)));
+            if (!string.IsNullOrWhiteSpace(r.Candidate.Subs))
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "subs"),
+                    new XAttribute("value", r.Candidate.Subs)));
+            if (!string.IsNullOrWhiteSpace(r.Candidate.InfoHash))
+                item.Add(new XElement(Newznab + "attr",
+                    new XAttribute("name", "infohash"),
+                    new XAttribute("value", r.Candidate.InfoHash)));
 
             channel.Add(item);
         }
