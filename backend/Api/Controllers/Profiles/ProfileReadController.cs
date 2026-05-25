@@ -54,6 +54,7 @@ public class ProfileReadController(
                         bingeGroup = $"nzbdavex|{displayIndexer}|{type}",
                         notWebReady = true,
                     },
+                    meta = new { indexer = displayIndexer },
                 };
             })
             .ToList();
