@@ -1,26 +1,26 @@
-# Comprehensive NzbDav Setup Guide
+# Comprehensive NzbDavEx Setup Guide
 
-This guide walks through setting up NzbDav (a self-hosted Usenet-backed WebDAV mount with on-demand reads) and integrating it with common adjacent tooling: Radarr/Sonarr, Plex/Jellyfin, and external search clients.
+This guide walks through setting up NzbDavEx (a self-hosted Usenet-backed WebDAV mount with on-demand reads) and integrating it with common adjacent tooling: Radarr/Sonarr, Plex/Jellyfin, and external search clients.
 
 ## How the workflow operates
-NzbDav can be used in two complementary paths. Configure whichever paths fit your setup.
+NzbDavEx can be used in two complementary paths. Configure whichever paths fit your setup.
 
 ### Path A: The Automation Flow (Radarr/Sonarr + Plex/Jellyfin)
-1. **Radarr** sends an `.nzb` file to NzbDav (acting as a download client) to "download".
-2. **NzbDav** mounts the nzb onto the webdav without actually downloading it.
-3. **NzbDav** tells Radarr the "download" is finished and points to a folder of **Symlinks** at `/mnt/remote/nzbdav/completed-symlinks`.
-    * The **Symlinks** always point to the `/mnt/remote/nzbdav/.ids` folder which contains the on-demand file content.
+1. **Radarr** sends an `.nzb` file to NzbDavEx (acting as a download client) to "download".
+2. **NzbDavEx** mounts the nzb onto the webdav without actually downloading it.
+3. **NzbDavEx** tells Radarr the "download" is finished and points to a folder of **Symlinks** at `/mnt/remote/nzbdavex/completed-symlinks`.
+    * The **Symlinks** always point to the `/mnt/remote/nzbdavex/.ids` folder which contains the on-demand file content.
 4. **Radarr** imports these Symlinks into your library. For eg: `/mnt/media/movies`.
 5. **Plex** reads the Symlink → Rclone Mount → WebDAV → Usenet Provider — fetching ranges on demand.
     * **RClone** exposes the nzb contents to your filesystem via on-demand reads, without using any storage space on your server.
 
 ### Path B: The On-Demand Flow (External Search Clients)
-NzbDav exposes a per-profile search-API endpoint (Search Profiles) that any compatible external client can query and then trigger playback through NzbDav's mount. See [Phase 5](#phase-5-search-profiles--on-demand-search-adapters) for adapter details; the flow is:
+NzbDavEx exposes a per-profile search-API endpoint (Search Profiles) that any compatible external client can query and then trigger playback through NzbDavEx's mount. See [Phase 5](#phase-5-search-profiles--on-demand-search-adapters) for adapter details; the flow is:
 1. **The external client** searches your indexers via the Search Profile endpoint and finds a release.
-2. **The client** sends the `.nzb` to NzbDav's API to mount it.
-3. **NzbDav** mounts the file instantly via WebDAV.
+2. **The client** sends the `.nzb` to NzbDavEx's API to mount it.
+3. **NzbDavEx** mounts the file instantly via WebDAV.
 4. **The client** generates a playable URL.
-   * *Note: If using the recommended Proxy setup, this URL points back through the client, which tunnels the traffic from NzbDav.*
+   * *Note: If using the recommended Proxy setup, this URL points back through the client, which tunnels the traffic from NzbDavEx.*
 5. **The client** plays the file from that URL (bypassing Rclone/Symlinks entirely).
 
 ## Phase 1: Prerequisites
@@ -31,19 +31,13 @@ You need a Usenet provider account. Any provider supporting NNTP with SSL works;
 ### 2. Indexers
 You need one or more Newznab-compatible indexers (or a self-hosted aggregator) to enable search. The choice and lawful use of the indexers is your responsibility.
 
-Configure them in NzbDav under `Settings → Indexers`, and (optionally) in any external automation tool you use.
+Configure them in NzbDavEx under `Settings → Indexers`, and (optionally) in any external automation tool you use.
 
 ---
 
 ## Phase 2: Initial Deployment
 
-We start with a basic NzbDav container.
-
-There is no pre-built image published, so we build from source. Clone the repo somewhere on the host first:
-
-```bash
-git clone https://github.com/qooode/nzbdavex.git
-```
+We start with a basic NzbDavEx container.
 
 ### 1. `docker-compose.yml` (Part 1)
 
@@ -51,20 +45,19 @@ Create the file structure like below:
 ```
 your-root-docker-folder/
 ├── apps
-│   ├── nzbdav
+│   ├── nzbdavex
 │   │   └── docker-compose.yml   👈 Create this file now
 │   └── ...
 ```
 
-Update `PUID`, `PGID`, `TZ`, `build:` path (to where you cloned `nzbdavex`), and volume paths as needed.
+Update `PUID`, `PGID`, and volume paths as needed.
 You can get your PUID/PGID by running `id` in your terminal.
 
 ```yaml
 services:
-  nzbdav:
-    build: /path/to/nzbdavex   # path to the cloned https://github.com/qooode/nzbdavex repo
-    image: nzbdavex:latest
-    container_name: nzbdav
+  nzbdavex:
+    image: ghcr.io/qooode/nzbdavex:edge
+    container_name: nzbdavex
     restart: unless-stopped
     healthcheck:
       test: curl -f http://localhost:3000/health || exit 1
@@ -83,16 +76,16 @@ services:
       - PUID=1000
       - PGID=1000
     volumes:
-      - ./config:/config
+      - ./data/nzbdavex:/config
       - /mnt:/mnt
 ```
 
-Build and run the container (the first run will build the image from the cloned source — subsequent runs reuse it):
+Pull and start the container:
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-To update later: `git pull` in the cloned `nzbdavex` directory, then `docker compose up -d --build` again.
+To update later: `docker compose pull && docker compose up -d`.
 
 ### 2. Core Configuration
 
@@ -126,16 +119,16 @@ You can find the optimal **Max Download Connections** for your network (`Setting
    ```bash
    wget -O /dev/null https://ash-speed.hetzner.com/10GB.bin --report-speed=bits
    ```
-2. **NzbDav Internal Test:**
+2. **NzbDavEx Internal Test:**
    * In one Terminal window, run below command to monitor CPU usage:
      ```bash
-     docker stats nzbdav
+     docker stats nzbdavex
      ```
-   * Download a movie `.nzb` via your indexer website and upload it to NzbDav.
-   * In NzbDav UI: Go to `Dav Explore` > `Content` > `Movies` > Pick the movie you just downloaded > Right click the **video file** and click `Copy Link Address`. Now paste it in a text editor where you can see the whole thing.
+   * Download a movie `.nzb` via your indexer website and upload it to NzbDavEx.
+   * In NzbDavEx UI: Go to `Dav Explore` > `Content` > `Movies` > Pick the movie you just downloaded > Right click the **video file** and click `Copy Link Address`. Now paste it in a text editor where you can see the whole thing.
    * Now construct test command like below and run it in another terminal window:
      ```bash
-     docker exec nzbdav sh -c "apk add --no-cache wget > /dev/null 2>&1 && timeout 20s wget -O /dev/null --report-speed=bits --progress=bar:force:noscroll 'http://localhost:8080/view/content/Movies/<Movie Folder>/<Movie Name>.mkv?downloadKey=<download-key>'"
+     docker exec nzbdavex sh -c "apk add --no-cache wget > /dev/null 2>&1 && timeout 20s wget -O /dev/null --report-speed=bits --progress=bar:force:noscroll 'http://localhost:8080/view/content/Movies/<Movie Folder>/<Movie Name>.mkv?downloadKey=<download-key>'"
      ```
      Take a look at the speed it reports and also notice the CPU usage of the container.
 3. **Adjust & Repeat:**
@@ -147,13 +140,13 @@ You can find the optimal **Max Download Connections** for your network (`Setting
 
 ## Phase 3: The Full Stack (Rclone Sidecar)
 
-Now we mount the NzbDav web dav to the host file system using a sidecar container.
+Now we mount the NzbDavEx WebDAV to the host file system using a sidecar container.
 
 ### 1. Prepare Host Directory
 
 ```bash
-sudo mkdir -p /mnt/remote/nzbdav # Create mount folder
-sudo chown -R $(id -u):$(id -g) -R /mnt/remote/nzbdav # Give ownership of the folder to your user
+sudo mkdir -p /mnt/remote/nzbdavex # Create mount folder
+sudo chown -R $(id -u):$(id -g) -R /mnt/remote/nzbdavex # Give ownership of the folder to your user
 ```
 
 ### 2. Generate Rclone Config
@@ -161,19 +154,19 @@ sudo chown -R $(id -u):$(id -g) -R /mnt/remote/nzbdav # Give ownership of the fo
 ```
 your-root-docker-folder/
 ├── apps
-│   ├── nzbdav
+│   ├── nzbdavex
 │   │   ├── docker-compose.yml
 │   │   └── rclone.conf          👈 Create this empty file now
 │   └── ...
 ```
 
-*Generate obscured password:* `docker run --rm -it rclone/rclone obscure "<the-webdav-password-you-set-in-nzbdav-earlier>"`
+*Generate obscured password:* `docker run --rm -it rclone/rclone obscure "<the-webdav-password-you-set-in-nzbdavex-earlier>"`
 
 Now populate `rclone.conf` with:
 ```ini
-[nzbdav]
+[nzbdavex]
 type = webdav
-url = http://nzbdav:3000/
+url = http://nzbdavex:3000/
 vendor = other
 user = admin
 pass = <PASTE_OBSCURED_PASSWORD_HERE_WITHOUT_ANGLE_BRACKETS>
@@ -181,15 +174,15 @@ pass = <PASTE_OBSCURED_PASSWORD_HERE_WITHOUT_ANGLE_BRACKETS>
 
 ### 3. Update `docker-compose.yml`
 
-Add the Rclone sidecar service to your existing `apps/nzbdav/docker-compose.yml`.
+Add the Rclone sidecar service to your existing `apps/nzbdavex/docker-compose.yml`.
 
 Update `PUID`, `PGID`, `TZ`, and volume paths as needed.
 You can get your PUID/PGID by running `id` in your terminal.
 
 ```yaml
-nzbdav_rclone:
+nzbdavex_rclone:
   image: rclone/rclone:latest
-  container_name: nzbdav_rclone
+  container_name: nzbdavex_rclone
   restart: unless-stopped
   environment:
     # Change these IDs to match your Docker user that you got from above
@@ -208,14 +201,14 @@ nzbdav_rclone:
   devices:
     - /dev/fuse:/dev/fuse:rwm
   depends_on:
-    nzbdav:
+    nzbdavex:
       condition: service_healthy
       restart: true
   # Optimized mounting flags for on-demand playback
   # 0M buffer size prevents double-caching (Kernel + RClone)
   # 512M read-ahead ensures smooth playback
   command: >
-    mount nzbdav: /mnt/remote/nzbdav
+    mount nzbdavex: /mnt/remote/nzbdavex
       --uid=1000
       --gid=1000
       --allow-other
@@ -229,19 +222,19 @@ nzbdav_rclone:
       --dir-cache-time=20s
 ```
 
-Start `nzbdav_rclone`
+Start `nzbdavex_rclone`
 ```bash
-$ docker compose up -d nzbdav_rclone
+$ docker compose up -d nzbdavex_rclone
 ```
 
 If you make some rclone config changes or other changes in the compose file, apply the changes like this
 ```bash
-$ docker compose up -d --force-recreate nzbdav_rclone
+$ docker compose up -d --force-recreate nzbdavex_rclone
 ```
 
 Check out the mount is working
 ```bash
-ls -la /mnt/remote/nzbdav
+ls -la /mnt/remote/nzbdavex
 # Should show: .ids, completed-symlinks, content, nzbs
 ```
 
@@ -267,19 +260,19 @@ Remember: `unnecessary flags = potential pitfalls`.
 
 ## Phase 4: Integrations
 
-### 1. Add NzbDav Download Client to Radarr/Sonarr
+### 1. Add NzbDavEx Download Client to Radarr/Sonarr
 
 Go to Radarr/Sonarr > `Settings` > `Download Clients` > `Add Download Client`
 
 * Client: **SABnzbd**
-* Name: `NzbDav`
-* Host: `nzbdav` 
+* Name: `NzbDavEx`
+* Host: `nzbdavex`
 * Port: `3000`
-* API Key: Found in NzbDav `Settings` > `SABnzbd`.
+* API Key: Found in NzbDavEx `Settings` > `SABnzbd`.
 
-### 2. Configure NzbDav for Radarr/Sonarr
+### 2. Configure NzbDavEx for Radarr/Sonarr
 
-Go to NzbDav `Settings` > `Radarr/Sonarr`.
+Go to NzbDavEx `Settings` > `Radarr/Sonarr`.
 
 1. **Radarr Instances > Add**
    * **Host:** `http://radarr:7878`
@@ -313,19 +306,19 @@ Go to NzbDav `Settings` > `Radarr/Sonarr`.
 ### 3. Configure Mount & Repairs
 
 1. **Mount Directory (`Settings` > `SABnzbd`):**
-   * **Rclone Mount Directory:** `/mnt/remote/nzbdav`
-   * *Note: This tells NzbDav where the files physically exist on your host system so it can pass the correct path to Radarr/Sonarr.*
+   * **Rclone Mount Directory:** `/mnt/remote/nzbdavex`
+   * *Note: This tells NzbDavEx where the files physically exist on your host system so it can pass the correct path to Radarr/Sonarr.*
 2. **Repairs (`Settings` > `Repairs`):**
    * **Library Directory:** `/mnt/media`
      *(Point this to the root folder where your actual Movie/TV libraries live on the host)*.
    * **Enable Background Repairs:** Checked.
-     *(This allows NzbDav to monitor for dead links in your library and trigger redownloads automatically).*
+     *(This allows NzbDavEx to monitor for dead links in your library and trigger redownloads automatically).*
 
 ---
 
 ## Phase 5: Search Profiles — on-demand search adapters
 
-NzbDav's **Search Profiles** feature exposes a token-scoped search-API endpoint that external clients can query for releases across your configured indexers, optionally triggering on-demand playback through NzbDav.
+NzbDavEx's **Search Profiles** feature exposes a token-scoped search-API endpoint that external clients can query for releases across your configured indexers, optionally triggering on-demand playback through NzbDavEx.
 
 Each profile gets its own random token. The same profile is reachable through multiple protocol adapters; each adapter can be individually toggled in `Settings → Search Profiles → Output adapters`:
 
@@ -337,31 +330,31 @@ Each profile gets its own random token. The same profile is reachable through mu
 
 All three adapters share the same underlying indexer search, deduping, filter, and strict-match logic. They differ only in response format. The legacy `/p/{token}/...` URLs continue to resolve to the Addon adapter for backwards compatibility with previously-installed clients.
 
-> **Note:** NzbDav itself does not host, ship, or recommend specific indexers, providers, or third-party clients. The choice and lawful use of all such services is the responsibility of the operator.
+> **Note:** NzbDavEx itself does not host, ship, or recommend specific indexers, providers, or third-party clients. The choice and lawful use of all such services is the responsibility of the operator.
 
 ### 5.1 Example: Newznab adapter with Prowlarr / Sonarr / Radarr
 
-The Newznab adapter lets your existing automation stack consume a Search Profile as if it were another Newznab indexer — useful when you want NzbDav's per-profile indexer selection and filtering to act as a single aggregated meta-indexer.
+The Newznab adapter lets your existing automation stack consume a Search Profile as if it were another Newznab indexer — useful when you want NzbDavEx's per-profile indexer selection and filtering to act as a single aggregated meta-indexer.
 
 In Prowlarr (or directly in Sonarr/Radarr):
 
 1. **Add Indexer → Custom → Newznab.**
-2. **URL:** `http://nzbdav:3000/adapters/newznab/{token}` (substitute your profile's token; do **not** include `/api` here — Prowlarr appends it).
+2. **URL:** `http://nzbdavex:3000/adapters/newznab/{token}` (substitute your profile's token; do **not** include `/api` here — Prowlarr appends it).
 3. **API Key:** Any non-empty value. Auth is via the URL token; the API Key field is accepted but its content is ignored.
 4. **Categories:** `2000` (Movies), `5000` (TV).
 5. **Test** — Prowlarr will call `/api?t=caps` and confirm the adapter responds.
 
-Releases returned by the Search Profile are surfaced as standard Newznab items. The enclosure URL on each item points to NzbDav's in-process NZB proxy (`/api/search/{token}/nzb/{playToken}.nzb`), so the source indexer URL and API key never leave the server — Sonarr/Radarr download the NZB through NzbDav.
+Releases returned by the Search Profile are surfaced as standard Newznab items. The enclosure URL on each item points to NzbDavEx's in-process NZB proxy (`/api/search/{token}/nzb/{playToken}.nzb`), so the source indexer URL and API key never leave the server — Sonarr/Radarr download the NZB through NzbDavEx.
 
 ### 5.2 Example: Addon adapter from a compatible client
 
 The Addon adapter exposes a token-scoped manifest endpoint. Any compatible client installs it directly via the manifest URL:
 
 ```
-http://nzbdav:3000/adapters/addon/{token}/manifest.json
+http://nzbdavex:3000/adapters/addon/{token}/manifest.json
 ```
 
-The manifest advertises the resources the client may request for `movie` and `series` types (keyed by IMDB ids). When the user picks a title in the client, the client calls back into NzbDav and receives a list of release candidates with an `url` field that, when followed, triggers on-demand fetch + mount and redirects to a playable URL served by NzbDav's WebDAV mount.
+The manifest advertises the resources the client may request for `movie` and `series` types (keyed by IMDB ids). When the user picks a title in the client, the client calls back into NzbDavEx and receives a list of release candidates with an `url` field that, when followed, triggers on-demand fetch + mount and redirects to a playable URL served by NzbDavEx's WebDAV mount.
 
 ### 5.3 Example: JSON Search API from a custom client
 
@@ -380,7 +373,7 @@ The manifest advertises the resources the client may request for `movie` and `se
       "sizeBytes": 123456789,
       "postedAt": "2024-01-01T00:00:00Z",
       "grabs": 42,
-      "playUrl": "http://nzbdav:3000/api/search/{token}/play/{playToken}.mkv"
+      "playUrl": "http://nzbdavex:3000/api/search/{token}/play/{playToken}.mkv"
     }
   ]
 }

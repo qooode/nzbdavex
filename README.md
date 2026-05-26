@@ -18,30 +18,60 @@ This is an extended fork of [nzbdav](https://github.com/nzbdav-dev/nzbdav) with 
 
 ## Getting Started
 
-There is no pre-built image published — clone the repo and build it locally with Docker:
+A pre-built image is published to the GitHub Container Registry. Pull and run it directly:
 
 ```bash
-git clone https://github.com/qooode/nzbdavex.git
-cd nzbdavex
-docker build -t nzbdavex:latest .
-docker run --rm -it -p 3000:3000 nzbdavex:latest
+docker run --rm -it -p 3000:3000 ghcr.io/qooode/nzbdavex:edge
 ```
 
 To persist settings, mount a volume at `/config`:
 
 ```bash
-mkdir -p $(pwd)/nzbdavex-config && \
+mkdir -p $(pwd)/data/nzbdavex && \
 docker run --rm -it \
-  -v $(pwd)/nzbdavex-config:/config \
+  -v $(pwd)/data/nzbdavex:/config \
   -e PUID=1000 \
   -e PGID=1000 \
   -p 3000:3000 \
-  nzbdavex:latest
+  ghcr.io/qooode/nzbdavex:edge
 ```
 
-To update later, `git pull` in the cloned repo and rebuild with `docker build -t nzbdavex:latest .`.
+To update, pull the latest image:
+
+```bash
+docker pull ghcr.io/qooode/nzbdavex:edge
+```
 
 Once running, open the UI on port `3000` and head to **Settings** to configure your NNTP providers and WebDAV credentials.
+
+### Docker Compose
+
+```yaml
+services:
+  nzbdavex:
+    image: ghcr.io/qooode/nzbdavex:edge
+    container_name: nzbdavex
+    restart: unless-stopped
+    healthcheck:
+      test: curl -f http://localhost:3000/health || exit 1
+      # Check every 1 minute
+      interval: 1m
+      # If it fails 3 times (3 minutes total), restart it
+      retries: 3
+      # Give it 5 seconds to boot up
+      start_period: 5s
+      # If it doesn't answer in 5 seconds, assume it's frozen
+      timeout: 5s
+    ports:
+      - "3000:3000"
+    environment:
+      # Change these IDs to match your Docker user that you got from above
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./data/nzbdavex:/config
+      - /mnt:/mnt
+```
 
 ## Setup Guide
 
