@@ -1,6 +1,6 @@
-# NzbDavEx
+# DavEx
 
-NzbDavEx is a WebDAV server that presents NZB documents as a virtual filesystem. It exposes standard filesystem semantics (browse, read, and random-access seek) over HTTP(S) without requiring full downloads to local disk, and ships a SABnzbd-compatible HTTP API for integration with compatible automation tools.
+DavEx is a WebDAV server that presents NZB documents as a virtual filesystem. It exposes standard filesystem semantics (browse, read, and random-access seek) over HTTP(S) without requiring full downloads to local disk, and ships a SABnzbd-compatible HTTP API for integration with compatible automation tools.
 
 This is an extended fork of [nzbdav](https://github.com/nzbdav-dev/nzbdav) with additional functionality layered on top: a Watchdog module for unattended file verification, multi-provider NNTP support with per-provider usage accounting, an indexers manager with strict-match filtering, search profiles exposing token-scoped search-API endpoints to external clients, and an updated settings UI.
 
@@ -83,7 +83,7 @@ See [LICENSE](LICENSE).
 
 ## Disclaimer
 
-NzbDavEx is a general-purpose WebDAV server and file-mounting utility. It is provided **as-is**, without warranty of any kind, express or implied. The software does not host, distribute, or index any content; it only connects to user-supplied third-party services using credentials supplied by the user.
+DavEx is a general-purpose WebDAV server and file-mounting utility. It is provided **as-is**, without warranty of any kind, express or implied. The software does not host, distribute, or index any content; it only connects to user-supplied third-party services using credentials supplied by the user.
 
 Users are solely responsible for:
 
