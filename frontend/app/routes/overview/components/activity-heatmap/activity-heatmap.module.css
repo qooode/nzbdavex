@@ -100,12 +100,21 @@
     min-width: 0;
 }
 
-.cell {
+.cell,
+.cellEmpty {
     aspect-ratio: 1 / 1;
     border-radius: 2px;
+    min-width: 0;
+}
+
+.cell {
     transition: filter 80ms ease, box-shadow 80ms ease;
     cursor: default;
-    min-width: 0;
+}
+
+.cellEmpty {
+    background-color: transparent;
+    pointer-events: none;
 }
 
 .cell:hover {
@@ -113,6 +122,24 @@
     box-shadow: 0 0 0 1px var(--text-primary);
     z-index: 1;
     position: relative;
+}
+
+.mode_day .cell,
+.mode_day .cellEmpty {
+    aspect-ratio: auto;
+    height: 32px;
+}
+
+.mode_month .cell,
+.mode_month .cellEmpty {
+    aspect-ratio: auto;
+    height: 12px;
+}
+
+.mode_year .cell,
+.mode_year .cellEmpty {
+    aspect-ratio: 1 / 1;
+    height: auto;
 }
 
 .axisRow {
@@ -124,15 +151,23 @@
     margin-top: 4px;
 }
 
-.axisInner {
+.axisGrid {
+    display: grid;
+    gap: 2px;
     flex: 1 1 0;
     min-width: 0;
-    display: flex;
-    justify-content: space-between;
     color: var(--text-muted);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     user-select: none;
+    position: relative;
+    height: 14px;
+}
+
+.axisTick {
+    grid-row: 1;
+    text-align: left;
+    white-space: nowrap;
 }
 
 .footer {

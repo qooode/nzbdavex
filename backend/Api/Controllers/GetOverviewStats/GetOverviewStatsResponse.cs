@@ -67,21 +67,19 @@ public class GetOverviewStatsResponse
         public long BiggestReadBytes { get; init; }
     }
 
-    /// <summary>
-    /// Day-of-week × hour-of-day grid of article counts over the trailing 7 days.
-    /// Day is 0 = Monday … 6 = Sunday (the user-friendly week start). Hour is 0–23 in UTC.
-    /// Cells with zero activity are omitted.
-    /// </summary>
     public class HeatmapBlock
     {
         public long MaxCell { get; init; }
+        public string Mode { get; init; } = "week";
+        public long WindowStartMs { get; init; }
+        public long WindowEndMs { get; init; }
+        public long BucketSizeMs { get; init; }
         public List<HeatmapCell> Cells { get; init; } = new();
     }
 
     public class HeatmapCell
     {
-        public int Day { get; init; }    // 0..6
-        public int Hour { get; init; }   // 0..23
+        public long Bucket { get; init; }
         public long Count { get; init; }
     }
 

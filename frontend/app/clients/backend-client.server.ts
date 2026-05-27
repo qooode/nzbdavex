@@ -518,6 +518,10 @@ export type OverviewStatsResponse = {
     },
     heatmap: {
         maxCell: number,
+        mode: HeatmapMode,
+        windowStartMs: number,
+        windowEndMs: number,
+        bucketSizeMs: number,
         cells: HeatmapCell[],
     },
     latency: {
@@ -565,9 +569,10 @@ export type ProviderRow = {
     spark: number[],
 }
 
+export type HeatmapMode = "day" | "week" | "month" | "year";
+
 export type HeatmapCell = {
-    day: number,      // 0=Mon..6=Sun
-    hour: number,     // 0..23
+    bucket: number,
     count: number,
 }
 

@@ -69,15 +69,7 @@ public class GetOverviewStatsController(
         List<GetOverviewStatsResponse.ErrorSlice> errors;
         long totalArticles, totalErrors, totalBytesFetched;
 
-        // Heatmap is always a trailing 7-day view regardless of the requested overview window,
-        // sourced from ProviderHourly (365 d retention) so it survives the 24 h raw-fetch TTL.
-        var heatmapStart = nowMs - 7 * OneDay;
-        var heatmapHours = await metrics.ProviderHourly
-            .Where(h => h.Hour >= heatmapStart)
-            .GroupBy(h => h.Hour)
-            .Select(g => new { Hour = g.Key, Articles = g.Sum(x => x.Articles) })
-            .ToListAsync().ConfigureAwait(false);
-        var heatmap = BuildHeatmapFromHourly(heatmapHours.Select(h => (h.Hour, h.Articles)));
+        var heatmap = await BuildHeatmapAsync(metrics, window, nowMs).ConfigureAwait(false);
 
         if (useRollups)
         {
@@ -362,34 +354,77 @@ public class GetOverviewStatsController(
         public ProviderAccumulator(int n) { Spark = new long[n]; }
     }
 
-    private static GetOverviewStatsResponse.HeatmapBlock BuildHeatmapFromHourly(
-        IEnumerable<(long Hour, long Articles)> hours)
+    private static async Task<GetOverviewStatsResponse.HeatmapBlock> BuildHeatmapAsync(
+        MetricsDbContext metrics,
+        GetOverviewStatsRequest.OverviewWindow window,
+        long nowMs)
     {
-        var cells = new Dictionary<(int Day, int Hour), long>();
+        var (mode, bucketSize, windowStart, windowEnd) = ResolveHeatmapWindow(window, nowMs);
+
+        var hourly = await metrics.ProviderHourly
+            .Where(h => h.Hour >= windowStart)
+            .GroupBy(h => h.Hour)
+            .Select(g => new { Hour = g.Key, Articles = g.Sum(x => x.Articles) })
+            .ToListAsync().ConfigureAwait(false);
+
+        var byBucket = new Dictionary<long, long>();
         long max = 0;
-        foreach (var (hour, articles) in hours)
+        foreach (var h in hourly)
         {
-            var dt = DateTimeOffset.FromUnixTimeMilliseconds(hour).UtcDateTime;
-            var dow = ((int)dt.DayOfWeek + 6) % 7; // shift Sun=0 → Mon=0
-            var key = (dow, dt.Hour);
-            cells.TryGetValue(key, out var c);
-            c += articles;
-            cells[key] = c;
+            var bucket = h.Hour - (h.Hour % bucketSize);
+            byBucket.TryGetValue(bucket, out var c);
+            c += h.Articles;
+            byBucket[bucket] = c;
             if (c > max) max = c;
         }
 
         return new GetOverviewStatsResponse.HeatmapBlock
         {
             MaxCell = max,
-            Cells = cells
+            Mode = mode,
+            WindowStartMs = windowStart,
+            WindowEndMs = windowEnd,
+            BucketSizeMs = bucketSize,
+            Cells = byBucket
                 .Select(kv => new GetOverviewStatsResponse.HeatmapCell
                 {
-                    Day = kv.Key.Day,
-                    Hour = kv.Key.Hour,
+                    Bucket = kv.Key,
                     Count = kv.Value,
                 })
+                .OrderBy(c => c.Bucket)
                 .ToList(),
         };
+    }
+
+    private static (string Mode, long BucketSize, long WindowStart, long WindowEnd) ResolveHeatmapWindow(
+        GetOverviewStatsRequest.OverviewWindow window, long nowMs)
+    {
+        var hourEnd = nowMs - (nowMs % OneHour);
+        var dayEnd = nowMs - (nowMs % OneDay);
+
+        return window switch
+        {
+            GetOverviewStatsRequest.OverviewWindow.Last24Hours
+                => ("day", OneHour, hourEnd - 23 * OneHour, hourEnd),
+
+            GetOverviewStatsRequest.OverviewWindow.Last7Days
+                => ("week", OneHour, dayEnd - 6 * OneDay, hourEnd),
+
+            GetOverviewStatsRequest.OverviewWindow.Last30Days
+                => ("month", OneHour, dayEnd - 29 * OneDay, hourEnd),
+
+            GetOverviewStatsRequest.OverviewWindow.AllTime
+                => ("year", OneDay, AlignYearStart(dayEnd), dayEnd),
+
+            _ => ("week", OneHour, dayEnd - 6 * OneDay, hourEnd),
+        };
+    }
+
+    private static long AlignYearStart(long todayDayStart)
+    {
+        var todayDow = ((int)DateTimeOffset.FromUnixTimeMilliseconds(todayDayStart).UtcDateTime.DayOfWeek + 6) % 7;
+        var thisWeekMonday = todayDayStart - todayDow * OneDay;
+        return thisWeekMonday - 52 * 7 * OneDay;
     }
 
     private static GetOverviewStatsResponse.LatencyBlock BuildLatency(IEnumerable<int> okDurationsMs)

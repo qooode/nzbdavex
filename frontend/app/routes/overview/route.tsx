@@ -131,9 +131,16 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
                 window={window}
             />
         ),
-        activity: !isLongWindow
-            ? <ActivityHeatmap maxCell={stats.heatmap.maxCell} cells={stats.heatmap.cells} />
-            : null,
+        activity: (
+            <ActivityHeatmap
+                maxCell={stats.heatmap.maxCell}
+                mode={stats.heatmap.mode}
+                windowStartMs={stats.heatmap.windowStartMs}
+                windowEndMs={stats.heatmap.windowEndMs}
+                bucketSizeMs={stats.heatmap.bucketSizeMs}
+                cells={stats.heatmap.cells}
+            />
+        ),
         latency: !isLongWindow
             ? (
                 <LatencyHistogram
