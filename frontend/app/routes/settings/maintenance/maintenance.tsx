@@ -18,7 +18,7 @@ export function Maintenance({ savedConfig, config, setNewConfig }: MaintenancePr
                 <Form.Group>
                     <Form.Check
                         className={styles.input}
-                        type="checkbox"
+                        type="switch"
                         id="db-startup-vacuum-enabled-checkbox"
                         aria-describedby="db-startup-vacuum-enabled-help"
                         label="Perform Database Vacuum on Start"
@@ -32,7 +32,7 @@ export function Maintenance({ savedConfig, config, setNewConfig }: MaintenancePr
                 <Form.Group>
                     <Form.Check
                         className={styles.input}
-                        type="checkbox"
+                        type="switch"
                         id="remove-orphaned-schedule-enabled-checkbox"
                         aria-describedby="remove-orphaned-schedule-help"
                         label={'Schedule "Remove Orphaned Files" Task Daily'}

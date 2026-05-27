@@ -181,7 +181,7 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="ensure-importable-video-checkbox"
                     aria-describedby="ensure-importable-video-help"
                     label={`Fail downloads for nzbs without video content`}
@@ -195,7 +195,7 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="ensure-article-existence-checkbox"
                     aria-describedby="ensure-article-existence-help"
                     label={`Perform article health check during downloads`}
@@ -215,7 +215,7 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="ignore-history-limit-checkbox"
                     aria-describedby="ignore-history-limit-help"
                     label={`Always send full History to Radarr/Sonarr`}
@@ -230,7 +230,7 @@ export function SabnzbdSettings({ config, setNewConfig, appVersion }: SabnzbdSet
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="nzb-backup-enabled-checkbox"
                     aria-describedby="nzb-backup-location-help"
                     label={`Save backup copies of incoming NZBs`}

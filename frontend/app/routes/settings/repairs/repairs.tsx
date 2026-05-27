@@ -24,7 +24,7 @@ export function RepairsSettings({ config, setNewConfig }: RepairsSettingsProps) 
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="enable-repairs-checkbox"
                     aria-describedby="enable-repairs-help"
                     label={`Enable Background Repairs`}

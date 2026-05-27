@@ -286,3 +286,174 @@ hr {
   border-top: 1px solid var(--border-subtle);
   margin: 16px 0;
 }
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-surface);
+  background-image: none;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  vertical-align: middle;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  print-color-adjust: exact;
+}
+
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background-color: var(--bg-surface-2);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0px;
+  width: 5px;
+  height: 9px;
+  border: solid #0a0a0a;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+input[type="checkbox"]:indeterminate {
+  background-color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+input[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 8px;
+  height: 2px;
+  background-color: #0a0a0a;
+  border-radius: 1px;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Custom toggle switch — for boolean enable/disable controls
+   Bootstrap renders Form.Check type="switch" with .form-switch
+   wrapping a .form-check-input.
+   The .toggle-switch class is a standalone utility for raw inputs.
+   ============================================================ */
+.form-switch .form-check-input,
+input[type="checkbox"].toggle-switch {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  width: 36px !important;
+  height: 20px !important;
+  min-width: 36px;
+  background-color: var(--bg-surface-2) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 999px !important;
+  background-image: none !important;
+  position: relative;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.form-switch .form-check-input::after,
+input[type="checkbox"].toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--text-secondary);
+  border: none;
+  transform: none;
+  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1), background-color 160ms ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.form-switch .form-check-input:hover:not(:disabled),
+input[type="checkbox"].toggle-switch:hover:not(:disabled) {
+  background-color: var(--bg-hover) !important;
+  border-color: var(--text-muted) !important;
+}
+
+.form-switch .form-check-input:focus-visible,
+input[type="checkbox"].toggle-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08) !important;
+}
+
+.form-switch .form-check-input:checked,
+input[type="checkbox"].toggle-switch:checked {
+  background-color: var(--success) !important;
+  border-color: var(--success) !important;
+}
+
+.form-switch .form-check-input:checked::after,
+input[type="checkbox"].toggle-switch:checked::after {
+  background-color: #0a0a0a;
+  transform: translateX(16px);
+}
+
+.form-switch .form-check-input:checked:hover:not(:disabled),
+input[type="checkbox"].toggle-switch:checked:hover:not(:disabled) {
+  background-color: #2dbf87 !important;
+  border-color: #2dbf87 !important;
+}
+
+.form-switch .form-check-input:disabled,
+input[type="checkbox"].toggle-switch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Bootstrap form-check spacing tweaks */
+.form-check {
+  padding-left: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: auto;
+}
+
+.form-check .form-check-input {
+  float: none;
+  margin-left: 0;
+  margin-top: 0;
+}
+
+.form-check .form-check-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-switch {
+  padding-left: 0;
+}

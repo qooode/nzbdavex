@@ -93,7 +93,7 @@ export function WebdavSettings({ config, setNewConfig }: SabnzbdSettingsProps) {
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="readonly-checkbox"
                     aria-describedby="readonly-help"
                     label={`Enforce Read-Only`}
@@ -107,7 +107,7 @@ export function WebdavSettings({ config, setNewConfig }: SabnzbdSettingsProps) {
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="show-hidden-files-checkbox"
                     aria-describedby="show-hidden-files-help"
                     label={`Show hidden files on Dav Explorer`}
@@ -121,7 +121,7 @@ export function WebdavSettings({ config, setNewConfig }: SabnzbdSettingsProps) {
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="preview-par2-files-checkbox"
                     aria-describedby="preview-par2-files-help"
                     label={`Preview par2 files on Dav Explorer`}

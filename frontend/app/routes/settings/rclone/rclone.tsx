@@ -50,7 +50,7 @@ export function RcloneSettings({ config, setNewConfig }: RcloneSettingsProps) {
             <Form.Group>
                 <Form.Check
                     className={styles.input}
-                    type="checkbox"
+                    type="switch"
                     id="rclone-rc-enabled-checkbox"
                     aria-describedby="rclone-rc-enabled-help"
                     label={`Enable Rclone RC Server Notifications`}

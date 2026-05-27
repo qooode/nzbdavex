@@ -772,7 +772,7 @@ function ProviderModal({ show, provider, onClose, onSave }: ProviderModalProps) 
                                 <input
                                     type="checkbox"
                                     id="provider-ssl"
-                                    className={styles["form-checkbox"]}
+                                    className={`${styles["form-checkbox"]} toggle-switch`}
                                     checked={useSsl}
                                     onChange={(e) => {
                                         setUseSsl(e.target.checked);

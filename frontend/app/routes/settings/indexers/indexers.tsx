@@ -872,7 +872,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 <input
                                     type="checkbox"
                                     id="indexer-enabled"
-                                    className={styles["form-checkbox"]}
+                                    className={`${styles["form-checkbox"]} toggle-switch`}
                                     checked={enabled}
                                     onChange={e => setEnabled(e.target.checked)}
                                 />
@@ -887,7 +887,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 <input
                                     type="checkbox"
                                     id="indexer-strict"
-                                    className={styles["form-checkbox"]}
+                                    className={`${styles["form-checkbox"]} toggle-switch`}
                                     checked={strict}
                                     onChange={e => setStrict(e.target.checked)}
                                 />
@@ -932,7 +932,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 <input
                                     type="checkbox"
                                     id="indexer-ignore-category-filter"
-                                    className={styles["form-checkbox"]}
+                                    className={`${styles["form-checkbox"]} toggle-switch`}
                                     checked={ignoreCategoryFilter}
                                     onChange={e => setIgnoreCategoryFilter(e.target.checked)}
                                 />
@@ -947,7 +947,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 <input
                                     type="checkbox"
                                     id="indexer-filter-enabled"
-                                    className={styles["form-checkbox"]}
+                                    className={`${styles["form-checkbox"]} toggle-switch`}
                                     checked={filterEnabled}
                                     onChange={e => setFilterEnabled(e.target.checked)}
                                 />
@@ -985,7 +985,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                         <input
                                             type="checkbox"
                                             id="indexer-filter-pw"
-                                            className={styles["form-checkbox"]}
+                                            className={`${styles["form-checkbox"]} toggle-switch`}
                                             checked={filterSkipPassworded}
                                             onChange={e => setFilterSkipPassworded(e.target.checked)}
                                         />
@@ -1042,7 +1042,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                         <input
                                             type="checkbox"
                                             id="indexer-filter-prefer"
-                                            className={styles["form-checkbox"]}
+                                            className={`${styles["form-checkbox"]} toggle-switch`}
                                             checked={filterPreferDownloaded}
                                             onChange={e => setFilterPreferDownloaded(e.target.checked)}
                                         />
