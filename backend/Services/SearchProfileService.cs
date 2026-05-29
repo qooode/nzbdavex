@@ -14,6 +14,7 @@ public class SearchProfileService(
     NewznabRateLimiter rateLimiter,
     IndexerHitTracker hitTracker,
     TvdbIdResolver tvdbResolver,
+    TmdbIdResolver tmdbResolver,
     ExternalIdResolver externalResolver,
     ImdbTitleResolver titleResolver,
     PreflightOrchestrator preflightOrchestrator)
@@ -32,6 +33,16 @@ public class SearchProfileService(
     public async Task<IReadOnlyDictionary<string, string>?> BuildImdbQueryAsync(
         string type, string id, CancellationToken ct)
     {
+        if (IsTvdbId(id))
+            return BuildTvdbQuery(type, id);
+
+        if (IsTmdbId(id))
+        {
+            var rewritten = await RewriteTmdbToImdbAsync(type, id, ct).ConfigureAwait(false);
+            if (rewritten is null) return null;
+            id = rewritten;
+        }
+
         var externalProvider = GetExternalProvider(id);
 
         if (type == "movie")
@@ -149,6 +160,53 @@ public class SearchProfileService(
         if (id.StartsWith("kitsu:", StringComparison.OrdinalIgnoreCase)) return "kitsu";
         if (id.StartsWith("mal:", StringComparison.OrdinalIgnoreCase)) return "mal";
         if (id.StartsWith("anilist:", StringComparison.OrdinalIgnoreCase)) return "anilist";
+        return null;
+    }
+
+    private static bool IsTvdbId(string id) =>
+        id.StartsWith("tvdb-", StringComparison.OrdinalIgnoreCase)
+        || id.StartsWith("tvdb:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTmdbId(string id) =>
+        id.StartsWith("tmdb:", StringComparison.OrdinalIgnoreCase)
+        || id.StartsWith("tmdb-", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyDictionary<string, string>? BuildTvdbQuery(string type, string id)
+    {
+        if (type != "series") return null;
+
+        var rest = id["tvdb".Length..].TrimStart('-', ':');
+        var parts = rest.Split(':');
+        if (parts.Length < 3) return null;
+        if (!int.TryParse(parts[0], out var tvdb)) return null;
+        if (!int.TryParse(parts[1], out var season)) return null;
+        if (!int.TryParse(parts[2], out var episode)) return null;
+
+        return new Dictionary<string, string>
+        {
+            ["t"] = "tvsearch",
+            ["tvdbid"] = tvdb.ToString(),
+            ["season"] = season.ToString(),
+            ["ep"] = episode.ToString(),
+            ["cat"] = "5000",
+            ["limit"] = "100",
+        };
+    }
+
+    private async Task<string?> RewriteTmdbToImdbAsync(string type, string id, CancellationToken ct)
+    {
+        var parts = id["tmdb".Length..].TrimStart('-', ':').Split(':');
+        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0])) return null;
+
+        var imdb = await tmdbResolver.GetImdbIdAsync(type, parts[0], ct).ConfigureAwait(false);
+        if (imdb is null) return null;
+
+        if (type == "movie") return imdb;
+        if (type == "series")
+        {
+            if (parts.Length < 3) return null;
+            return $"{imdb}:{parts[1]}:{parts[2]}";
+        }
         return null;
     }
 

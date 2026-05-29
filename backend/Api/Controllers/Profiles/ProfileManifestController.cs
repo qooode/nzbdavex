@@ -32,7 +32,7 @@ public class ProfileManifestController(SearchProfileService searchService) : Con
             description = "Newznab search-API endpoint returning results from the user's configured indexers.",
             resources = new[] { "stream" },
             types = new[] { "movie", "series" },
-            idPrefixes = new[] { "tt", "kitsu", "mal", "anilist" },
+            idPrefixes = new[] { "tt", "tmdb", "tvdb", "kitsu", "mal", "anilist" },
             behaviorHints = new { configurable = false, configurationRequired = false },
         });
     }

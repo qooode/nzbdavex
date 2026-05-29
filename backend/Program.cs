@@ -128,6 +128,7 @@ class Program
             .AddSingleton<NewznabRateLimiter>()
             .AddSingleton<IndexerHitTracker>()
             .AddSingleton<TvdbIdResolver>()
+            .AddSingleton<TmdbIdResolver>()
             .AddSingleton<ExternalIdResolver>()
             .AddSingleton<ImdbTitleResolver>()
             .AddSingleton<SearchProfileService>()
