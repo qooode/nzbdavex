@@ -1,6 +1,6 @@
 ﻿# About `/content`
 
-This directory contains all streamable files that have finished processing from the nzbdav queue.
+This directory contains all streamable files that have finished processing from the davex queue.
 
 It is mostly read-only. Files cannot be created, renamed, or moved within this directory.
 
@@ -12,7 +12,7 @@ However, files can be deleted from this directory if you no longer want them, us
 
 # About `/completed-symlinks`
 
-This directory contains symlinks for items that have finished processing the nzbdav queue and are still present in the nzbdav history table.
+This directory contains symlinks for items that have finished processing the davex queue and are still present in the davex history table.
 
 It is read-only. Files cannot be created, renamed, moved, or deleted from this directory. Files in this directory can only be read and copied out of the webdav.
 
@@ -28,9 +28,9 @@ If using Rclone to mount the webdav onto your filesystem, then Rclone will take 
 
 # About `/nzbs`
 
-This directory mirrors the nzbdav queue
+This directory mirrors the davex queue
 * Any nzb currently in the queue can be retrieved from this directory.
 * You can remove items from the queue by deleting the corresponding nzb from this directory
 * You can add items to the queue by uploading nzb files to this directory
 
-> Note: You must perform file operations using any compatible webdav client (or Rclone). The "Dav Explore" page on nzbdav UI does not currently support file operations.
+> Note: You must perform file operations using any compatible webdav client (or Rclone). The "Dav Explore" page on davex UI does not currently support file operations.

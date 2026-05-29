@@ -22,4 +22,4 @@ Add any other context or screenshots about the feature request here.
 ----
 
 **NOTE:**
-**NZBDAV is intended for use with legally obtained content only. The project maintainers do not condone piracy and will not provide support for users suspected of engaging in copyright infringement. Issues related to or suspected of piracy will be closed.**
+**NzbDavEx is intended for use with legally obtained content only. The project maintainers do not condone piracy and will not provide support for users suspected of engaging in copyright infringement. Issues related to or suspected of piracy will be closed.**

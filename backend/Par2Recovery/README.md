@@ -1,7 +1,7 @@
 ﻿This directory is derived from the following project:
 * https://bitbucket.org/PLN/pln.infra.parreader/src/master/
 
-Some modifications have been made for use by nzbdav
+Some modifications have been made for use by davex
 
 -----
 
