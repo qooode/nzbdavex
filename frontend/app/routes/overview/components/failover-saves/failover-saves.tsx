@@ -70,8 +70,8 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
 
                     {peak && (
                         <div className={styles.footnote}>
-                            Backups worked hardest {formatPeak(peak.bucket, bucketSizeMs)} — {formatNumber(peak.total)}{" "}
-                            {peak.total === 1 ? "rescue" : "rescues"}
+                            Backups worked hardest {formatPeak(peak.bucket, bucketSizeMs)}{" "}
+                            ({formatNumber(peak.total)} {peak.total === 1 ? "rescue" : "rescues"})
                         </div>
                     )}
                 </>
@@ -79,8 +79,8 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                 <div className={styles.empty}>
                     No failover saves in this window.
                     <div className={styles.emptySub}>
-                        Every article was served on the first try. When a provider misses, a backup steps in
-                        — and you&rsquo;ll see which one rescued what here.
+                        Every article was served on the first try. When a provider misses, a backup steps in.
+                        You&rsquo;ll see which one rescued what here.
                     </div>
                 </div>
             )}
