@@ -8,18 +8,23 @@ import { getLeafDirectoryName } from "~/utils/path"
 import { PageRow, PageTable } from "../page-table/page-table"
 import styles from "../../route.module.css"
 import { PageSection } from "../page-section/page-section"
+import { Pagination } from "../pagination/pagination"
 import { DropdownOptions } from "~/routes/explore/dropdown-options/dropdown-options"
 import { ExportNzb, Remove } from "~/routes/explore/item-menu/item-menu"
 
 export type HistoryTableProps = {
     historySlots: PresentationHistorySlot[],
     totalHistoryCount: number,
+    pageNumber: number,
+    totalPages: number,
+    isLive: boolean,
+    onPageSelected: (page: number) => void,
     onIsSelectedChanged: (nzo_ids: Set<string>, isSelected: boolean) => void,
     onIsRemovingChanged: (nzo_ids: Set<string>, isRemoving: boolean) => void,
     onRemoved: (nzo_ids: Set<string>) => void,
 }
 
-export function HistoryTable({ historySlots, totalHistoryCount, onIsSelectedChanged, onIsRemovingChanged, onRemoved }: HistoryTableProps) {
+export function HistoryTable({ historySlots, totalHistoryCount, pageNumber, totalPages, isLive, onPageSelected, onIsSelectedChanged, onIsRemovingChanged, onRemoved }: HistoryTableProps) {
     const [isConfirmingRemoval, setIsConfirmingRemoval] = useState(false);
     var selectedCount = historySlots.filter(x => !!x.isSelected).length;
     var headerCheckboxState: TriCheckboxState = selectedCount === 0 ? 'none' : selectedCount === historySlots.length ? 'all' : 'some';
@@ -69,9 +74,16 @@ export function HistoryTable({ historySlots, totalHistoryCount, onIsSelectedChan
         </div>
     );
 
+    const footer = totalPages > 1 ? (
+        <div className={styles.tableFooter}>
+            {!isLive && <span className={styles.pausedNote}>Live updates pause on older pages — go to page 1 for live.</span>}
+            <Pagination pageNumber={pageNumber} totalPages={totalPages} onPageSelected={onPageSelected} />
+        </div>
+    ) : undefined;
+
     return (
         <PageSection title={sectionTitle}>
-            <PageTable headerCheckboxState={headerCheckboxState} onHeaderCheckboxChange={onSelectAll}>
+            <PageTable headerCheckboxState={headerCheckboxState} onHeaderCheckboxChange={onSelectAll} footer={footer}>
                 {historySlots.map(slot =>
                     <HistoryRow
                         key={slot.nzo_id}

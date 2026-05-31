@@ -5,6 +5,7 @@ import type { PresentationQueueSlot } from "../../route"
 import type { TriCheckboxState } from "../tri-checkbox/tri-checkbox"
 import { PageRow, PageTable } from "../page-table/page-table"
 import { PageSection } from "../page-section/page-section"
+import { Pagination } from "../pagination/pagination"
 import { EmptyQueue } from "../empty-queue/empty-queue"
 import { SimpleDropdown } from "../simple-dropdown/simple-dropdown"
 import styles from "../../route.module.css"
@@ -14,6 +15,10 @@ import { ThinViewport } from "../thin-viewport/thin-viewport"
 export type QueueTableProps = {
     queueSlots: PresentationQueueSlot[],
     totalQueueCount: number,
+    pageNumber: number,
+    totalPages: number,
+    isLive: boolean,
+    onPageSelected: (page: number) => void,
     categories: string[],
     manualCategoryRef: React.RefObject<string>,
     onIsSelectedChanged: (nzo_ids: Set<string>, isSelected: boolean) => void,
@@ -25,6 +30,10 @@ export type QueueTableProps = {
 export function QueueTable({
     queueSlots,
     totalQueueCount,
+    pageNumber,
+    totalPages,
+    isLive,
+    onPageSelected,
     categories,
     manualCategoryRef,
     onIsSelectedChanged,
@@ -121,12 +130,19 @@ export function QueueTable({
         </ThinViewport>
     );
 
+    const footer = totalPages > 1 ? (
+        <div className={styles.tableFooter}>
+            {!isLive && <span className={styles.pausedNote}>Live updates pause on older pages — go to page 1 for live.</span>}
+            <Pagination pageNumber={pageNumber} totalPages={totalPages} onPageSelected={onPageSelected} />
+        </div>
+    ) : undefined;
+
     return (
         <PageSection title={sectionTitle} subTitle={sectionSubTitle}>
             {queueSlots?.length == 0 ? (
                 <EmptyQueue onUploadClicked={onUploadClicked} />
             ) : (
-                <PageTable headerCheckboxState={headerCheckboxState} onHeaderCheckboxChange={onSelectAll}>
+                <PageTable headerCheckboxState={headerCheckboxState} onHeaderCheckboxChange={onSelectAll} footer={footer}>
                     {queueSlots.map(slot =>
                         <QueueRow
                             key={slot.nzo_id}

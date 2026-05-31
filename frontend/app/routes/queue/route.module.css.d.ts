@@ -3,9 +3,8 @@ declare const styles: {
   readonly "queueContainer": string;
   readonly "section": string;
   readonly "sectionTitle": string;
-  readonly "alert": string;
-  readonly "list": string;
-  readonly "listItem": string;
+  readonly "tableFooter": string;
+  readonly "pausedNote": string;
   readonly "dropzone": string;
   readonly "activeDropzone": string;
 };

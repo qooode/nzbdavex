@@ -1,20 +1,28 @@
-import { Link } from "react-router";
+import { useSearchParams } from "react-router";
 import type { Route } from "./+types/route";
 import styles from "./route.module.css"
-import { Alert } from 'react-bootstrap';
 import { backendClient, type HistorySlot, type QueueSlot } from "~/clients/backend-client.server";
 import { HistoryTable } from "./components/history-table/history-table";
 import { QueueTable } from "./components/queue-table/queue-table";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useHistoryEvents, useQueueEvents } from "./controllers/events-controller";
 import { initializeQueueHistoryWebsocket } from "./controllers/websocket-controller";
 import { initializeUploadController } from "./controllers/nzb-upload-controller";
 import { useQueueDropzone } from "./controllers/dropzone-controller";
 
-const maxItems = 100;
+const pageSize = 100;
+
+function parsePage(value: string | null): number {
+    const page = parseInt(value ?? "1", 10);
+    return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
-    const queuePromise = backendClient.getQueue(maxItems);
-    const historyPromise = backendClient.getHistory(maxItems);
+    const url = new URL(request.url);
+    const queuePage = parsePage(url.searchParams.get("qp"));
+    const historyPage = parsePage(url.searchParams.get("hp"));
+    const queuePromise = backendClient.getQueue(pageSize, (queuePage - 1) * pageSize);
+    const historyPromise = backendClient.getHistory(pageSize, (historyPage - 1) * pageSize);
     const configPromise = backendClient.getConfig(["api.categories", "api.manual-category"])
     const queue = await queuePromise;
     const history = await historyPromise;
@@ -37,25 +45,50 @@ export async function loader({ request }: Route.LoaderArgs) {
         totalHistoryCount: history?.noofslots || 0,
         categories: categories,
         manualCategory: manualCategory,
+        queuePage: queuePage,
+        historyPage: historyPage,
+        pageSize: pageSize,
     }
 }
 
 export default function Queue(props: Route.ComponentProps) {
+    const { pageSize, queuePage, historyPage, totalQueueCount, totalHistoryCount } = props.loaderData;
     const [queueSlots, setQueueSlots] = useState<PresentationQueueSlot[]>(props.loaderData.queueSlots);
     const [historySlots, setHistorySlots] = useState<PresentationHistorySlot[]>(props.loaderData.historySlots);
     const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
     const uploadQueueRef = useRef<UploadingFile[]>([]);
     const manualCategoryRef = useRef<string>(props.loaderData.manualCategory);
     const isUploadingRef = useRef(false);
-    const disableLiveView = queueSlots.length == maxItems || historySlots.length == maxItems;
-    const combinedQueueSlots = [...uploadingFiles.map(file => file.queueSlot), ...queueSlots];
+    const [, setSearchParams] = useSearchParams();
+
+    useEffect(() => { setQueueSlots(props.loaderData.queueSlots); }, [props.loaderData.queueSlots]);
+    useEffect(() => { setHistorySlots(props.loaderData.historySlots); }, [props.loaderData.historySlots]);
+
+    const queueTotalPages = Math.max(1, Math.ceil(totalQueueCount / pageSize));
+    const historyTotalPages = Math.max(1, Math.ceil(totalHistoryCount / pageSize));
+    const isQueueLive = queuePage === 1;
+    const isHistoryLive = historyPage === 1;
+
+    const setPageParam = useCallback((key: string, page: number) => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set(key, String(page));
+            return next;
+        }, { preventScrollReset: true });
+    }, [setSearchParams]);
+    const onQueuePageSelected = useCallback((page: number) => setPageParam("qp", page), [setPageParam]);
+    const onHistoryPageSelected = useCallback((page: number) => setPageParam("hp", page), [setPageParam]);
+
+    const combinedQueueSlots = isQueueLive
+        ? [...uploadingFiles.map(file => file.queueSlot), ...queueSlots]
+        : queueSlots;
 
     // queue/history events
-    const queueEvents = useQueueEvents(setUploadingFiles, setQueueSlots, uploadQueueRef);
-    const historyEvents = useHistoryEvents(setHistorySlots);
+    const queueEvents = useQueueEvents(setUploadingFiles, setQueueSlots, uploadQueueRef, pageSize);
+    const historyEvents = useHistoryEvents(setHistorySlots, pageSize);
 
     // websocket
-    initializeQueueHistoryWebsocket(queueEvents, historyEvents, disableLiveView);
+    initializeQueueHistoryWebsocket(queueEvents, historyEvents, isQueueLive, isHistoryLive);
 
     // uploads
     const dropzone = useQueueDropzone(setUploadingFiles, uploadQueueRef, manualCategoryRef);
@@ -65,27 +98,6 @@ export default function Queue(props: Route.ComponentProps) {
     return (
         <div className={styles.container}>
 
-            {/* warning */}
-            {disableLiveView &&
-                <Alert className={styles.alert} variant="warning">
-                    <b>Attention</b>
-                    <ul className={styles.list}>
-                        <li className={styles.listItem}>
-                            Displaying the first {queueSlots.length} of {props.loaderData.totalQueueCount} queue items
-                        </li>
-                        <li className={styles.listItem}>
-                            Displaying the first {historySlots.length} of {props.loaderData.totalHistoryCount} history items
-                        </li>
-                        <li className={styles.listItem}>
-                            Live view is disabled. Manually <Link to={'/queue'}>refresh</Link> the page for updates.
-                        </li>
-                        <li className={styles.listItem}>
-                            (This is a bandaid — Proper pagination will be added soon)
-                        </li>
-                    </ul>
-                </Alert>
-            }
-
             {/* queue */}
             <div className={styles.queueContainer}>
                 <div className={styles.dropzone} {...dropzone.getRootProps()}>
@@ -94,6 +106,10 @@ export default function Queue(props: Route.ComponentProps) {
                     <QueueTable
                         queueSlots={combinedQueueSlots}
                         totalQueueCount={props.loaderData.totalQueueCount + uploadingFiles.length}
+                        pageNumber={queuePage}
+                        totalPages={queueTotalPages}
+                        isLive={isQueueLive}
+                        onPageSelected={onQueuePageSelected}
                         categories={props.loaderData.categories}
                         manualCategoryRef={manualCategoryRef}
                         onIsSelectedChanged={queueEvents.onSelectQueueSlots}
@@ -105,10 +121,14 @@ export default function Queue(props: Route.ComponentProps) {
             </div>
 
             {/* history */}
-            {historySlots.length > 0 &&
+            {totalHistoryCount > 0 &&
                 <HistoryTable
                     historySlots={historySlots}
                     totalHistoryCount={props.loaderData.totalHistoryCount}
+                    pageNumber={historyPage}
+                    totalPages={historyTotalPages}
+                    isLive={isHistoryLive}
+                    onPageSelected={onHistoryPageSelected}
                     onIsSelectedChanged={historyEvents.onSelectHistorySlots}
                     onIsRemovingChanged={historyEvents.onRemovingHistorySlots}
                     onRemoved={historyEvents.onRemoveHistorySlots}

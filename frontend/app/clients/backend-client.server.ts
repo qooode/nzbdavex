@@ -67,8 +67,8 @@ class BackendClient {
         return data.authenticated;
     }
 
-    public async getQueue(limit: number): Promise<QueueResponse> {
-        const url = process.env.BACKEND_URL + `/api?mode=queue&limit=${limit}`;
+    public async getQueue(limit: number, start: number = 0): Promise<QueueResponse> {
+        const url = process.env.BACKEND_URL + `/api?mode=queue&start=${start}&limit=${limit}`;
 
         const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
         const response = await fetch(url, { headers: { "x-api-key": apiKey } });
@@ -80,8 +80,8 @@ class BackendClient {
         return data.queue;
     }
 
-    public async getHistory(limit: number): Promise<HistoryResponse> {
-        const url = process.env.BACKEND_URL + `/api?mode=history&pageSize=${limit}`;
+    public async getHistory(limit: number, start: number = 0): Promise<HistoryResponse> {
+        const url = process.env.BACKEND_URL + `/api?mode=history&start=${start}&pageSize=${limit}`;
 
         const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
         const response = await fetch(url, { headers: { "x-api-key": apiKey } });

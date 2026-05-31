@@ -22,13 +22,14 @@ export type HistoryEvents = {
 export function useQueueEvents(
     setUploadingFiles: (value: React.SetStateAction<UploadingFile[]>) => void,
     setQueueSlots: (value: React.SetStateAction<PresentationQueueSlot[]>) => void,
-    uploadQueueRef: React.RefObject<UploadingFile[]>
+    uploadQueueRef: React.RefObject<UploadingFile[]>,
+    pageSize: number
 ) {
     const onAddQueueSlot = useCallback((queueSlot: QueueSlot) => {
         uploadQueueRef.current = uploadQueueRef.current.filter(x => x.queueSlot.status === "uploading" || x.queueSlot.filename !== queueSlot.filename);
         setUploadingFiles(files => files.filter(f => f.queueSlot.filename !== queueSlot.filename));
-        setQueueSlots(slots => [...slots, queueSlot]);
-    }, [setQueueSlots]);
+        setQueueSlots(slots => slots.length >= pageSize ? slots : [...slots, queueSlot]);
+    }, [setQueueSlots, pageSize]);
 
     const onSelectQueueSlots = useCallback((ids: Set<string>, isSelected: boolean) => {
         setUploadingFiles(files => files.map(x => ids.has(x.queueSlot.nzo_id) ? { ...x, queueSlot: { ...x.queueSlot, isSelected } } : x));
@@ -83,11 +84,12 @@ export function useQueueEvents(
 }
 
 export function useHistoryEvents(
-    setHistorySlots: (value: React.SetStateAction<PresentationHistorySlot[]>) => void
+    setHistorySlots: (value: React.SetStateAction<PresentationHistorySlot[]>) => void,
+    pageSize: number
 ) {
     const onAddHistorySlot = useCallback((historySlot: HistorySlot) => {
-        setHistorySlots(slots => [historySlot, ...slots]);
-    }, [setHistorySlots]);
+        setHistorySlots(slots => [historySlot, ...slots].slice(0, pageSize));
+    }, [setHistorySlots, pageSize]);
 
     const onSelectHistorySlots = useCallback((ids: Set<string>, isSelected: boolean) => {
         setHistorySlots(slots => slots.map(x => ids.has(x.nzo_id) ? { ...x, isSelected } : x));

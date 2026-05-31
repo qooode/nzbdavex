@@ -25,32 +25,36 @@ const topicSubscriptions = {
 export function initializeQueueHistoryWebsocket(
     queueEvents: QueueEvents,
     historyEvents: HistoryEvents,
-    disableLiveView: boolean,
+    isQueueLive: boolean,
+    isHistoryLive: boolean,
 ) {
     const onWebsocketMessage = useCallback((topic: string, message: string) => {
-        if (disableLiveView) return;
-        if (topic == topicNames.queueItemAdded)
-            queueEvents.onAddQueueSlot(JSON.parse(message));
-        else if (topic == topicNames.queueItemRemoved)
-            queueEvents.onRemoveQueueSlots(new Set<string>(message.split(',')));
+        if (topic == topicNames.queueItemAdded) {
+            if (isQueueLive) queueEvents.onAddQueueSlot(JSON.parse(message));
+        }
+        else if (topic == topicNames.queueItemRemoved) {
+            if (isQueueLive) queueEvents.onRemoveQueueSlots(new Set<string>(message.split(',')));
+        }
         else if (topic == topicNames.queueItemStatus)
             queueEvents.onChangeQueueSlotStatus(message);
         else if (topic == topicNames.queueItemPercentage)
             queueEvents.onChangeQueueSlotPercentage(message);
         else if (topic == topicNames.queueItemProviders)
             queueEvents.onChangeQueueSlotProviders(message);
-        else if (topic == topicNames.historyItemAdded)
-            historyEvents.onAddHistorySlot(JSON.parse(message));
-        else if (topic == topicNames.historyItemRemoved)
-            historyEvents.onRemoveHistorySlots(new Set<string>(message.split(',')));
+        else if (topic == topicNames.historyItemAdded) {
+            if (isHistoryLive) historyEvents.onAddHistorySlot(JSON.parse(message));
+        }
+        else if (topic == topicNames.historyItemRemoved) {
+            if (isHistoryLive) historyEvents.onRemoveHistorySlots(new Set<string>(message.split(',')));
+        }
     }, [
         queueEvents,
         historyEvents,
-        disableLiveView
+        isQueueLive,
+        isHistoryLive
     ]);
 
     useEffect(() => {
-        if (disableLiveView) return;
         let ws: WebSocket;
         let disposed = false;
         function connect() {
@@ -63,5 +67,5 @@ export function initializeQueueHistoryWebsocket(
         }
 
         return connect();
-    }, [onWebsocketMessage, disableLiveView]);
+    }, [onWebsocketMessage]);
 }

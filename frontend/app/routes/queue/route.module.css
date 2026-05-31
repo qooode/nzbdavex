@@ -35,16 +35,16 @@
     }
 }
 
-.alert {
-    margin-bottom: 24px;
+.tableFooter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
 
-    .list {
-        margin-bottom: 0;
-    }
-
-    .listItem {
-        margin-top: 5px
-    }
+.pausedNote {
+    color: var(--text-muted);
+    font-size: 12px;
 }
 
 .dropzone {
