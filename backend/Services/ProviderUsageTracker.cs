@@ -11,6 +11,7 @@ public class ProviderUsageTracker(ActiveReadRegistry? activeReadRegistry = null)
 {
     private static readonly AsyncLocal<Guid?> CurrentScope = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, long>> _usage = new();
+    private readonly ConcurrentDictionary<Guid, long> _failoverSaves = new();
 
     public IDisposable BeginScope(Guid queueItemId)
     {
@@ -29,6 +30,16 @@ public class ProviderUsageTracker(ActiveReadRegistry? activeReadRegistry = null)
         // this scope. No-op when the scope id isn't a registered read session.
         activeReadRegistry?.Touch(qid.Value, 0);
     }
+
+    public void RecordFailoverSave()
+    {
+        var id = CurrentScope.Value;
+        if (id == null) return;
+        _failoverSaves.AddOrUpdate(id.Value, 1, (_, v) => v + 1);
+    }
+
+    public long GetFailoverSaves(Guid scopeId)
+        => _failoverSaves.TryGetValue(scopeId, out var v) ? v : 0;
 
     public IReadOnlyDictionary<string, long> Snapshot(Guid queueItemId)
     {
@@ -50,6 +61,7 @@ public class ProviderUsageTracker(ActiveReadRegistry? activeReadRegistry = null)
     public void Clear(Guid queueItemId)
     {
         _usage.TryRemove(queueItemId, out _);
+        _failoverSaves.TryRemove(queueItemId, out _);
     }
 
     private sealed class Releaser(Action onDispose) : IDisposable

@@ -63,6 +63,7 @@ public sealed class MetricsDbContext() : DbContext(Options.Value)
             e.Property(x => x.Path).IsRequired();
             e.Property(x => x.BytesServed).IsRequired();
             e.Property(x => x.BytesFetched).IsRequired();
+            e.Property(x => x.FailoverSaves).IsRequired();
             e.Property(x => x.EndReason).HasConversion<int>().IsRequired();
 
             e.HasIndex(x => x.StartedAt);
@@ -103,6 +104,7 @@ public sealed class MetricsDbContext() : DbContext(Options.Value)
             e.Property(x => x.BytesFetched).IsRequired();
             e.Property(x => x.Errors).IsRequired();
             e.Property(x => x.Retries).IsRequired();
+            e.Property(x => x.FailoverSaves).IsRequired();
             e.Property(x => x.SumDurationMs).IsRequired();
         });
 
@@ -116,6 +118,7 @@ public sealed class MetricsDbContext() : DbContext(Options.Value)
             e.Property(x => x.BytesFetched).IsRequired();
             e.Property(x => x.Errors).IsRequired();
             e.Property(x => x.Retries).IsRequired();
+            e.Property(x => x.FailoverSaves).IsRequired();
             e.Property(x => x.SumDurationMs).IsRequired();
         });
 

@@ -20,6 +20,7 @@ public class GetOverviewStatsResponse
     public List<IndexerApiUsageRow> IndexerApiUsage { get; init; } = new();
     public LifetimeBlock Lifetime { get; init; } = new();
     public RecordsBlock Records { get; init; } = new();
+    public FailoverBlock Failover { get; init; } = new();
 
     public class LiveTiles
     {
@@ -159,5 +160,27 @@ public class GetOverviewStatsResponse
         public long? BestDayAt { get; init; }
         public long BestHourBytes { get; init; }
         public long? BestHourAt { get; init; }
+    }
+
+    public class FailoverBlock
+    {
+        public long ArticlesRecovered { get; init; }
+        public long ReadsSaved { get; init; }
+        public long BucketSizeMs { get; init; }
+        public List<FailoverProvider> Providers { get; init; } = new();
+        public List<FailoverBucket> Buckets { get; init; } = new();
+    }
+
+    public class FailoverProvider
+    {
+        public string Provider { get; init; } = "";
+        public string? Nickname { get; init; }
+        public long Saves { get; init; }
+    }
+
+    public class FailoverBucket
+    {
+        public long Bucket { get; init; }
+        public List<long> Counts { get; init; } = new();
     }
 }

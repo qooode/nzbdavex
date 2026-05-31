@@ -202,6 +202,7 @@ public class MultiProviderNntpClient(
                 {
                     usageTracker.RecordSuccess(provider.Host);
                     RecordFetch(provider.Host, SegmentFetch.FetchStatus.Ok, stopwatch.ElapsedMilliseconds, i);
+                    if (i > 0) usageTracker.RecordFailoverSave();
                     result = WrapStreamForByteCounting(result, provider.Host);
                 }
                 else

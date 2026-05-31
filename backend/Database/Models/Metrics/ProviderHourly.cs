@@ -8,6 +8,7 @@ public class ProviderHourly
     public long BytesFetched { get; set; }
     public long Errors { get; set; }
     public long Retries { get; set; }
+    public long FailoverSaves { get; set; }
     public long SumDurationMs { get; set; }
     public int? P95DurationMs { get; set; }
 }

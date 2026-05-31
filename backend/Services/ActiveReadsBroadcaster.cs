@@ -56,6 +56,7 @@ public class ActiveReadsBroadcaster(
         var pruned = registry.PruneExpired();
         foreach (var entry in pruned)
         {
+            var failoverSaves = usageTracker.GetFailoverSaves(entry.Id);
             usageTracker.Clear(entry.Id);
             metricsWriter.RecordSession(new ReadSession
             {
@@ -68,6 +69,7 @@ public class ActiveReadsBroadcaster(
                 FileSize = entry.FileSize,
                 BytesServed = Interlocked.Read(ref entry.BytesRead),
                 BytesFetched = 0, // not measured per-session yet (bytes stream after fetch attribution)
+                FailoverSaves = (int)Math.Min(int.MaxValue, failoverSaves),
                 ClientUserAgent = null,
                 ClientIp = null,
                 EndReason = ReadSession.EndReasonCode.Completed,

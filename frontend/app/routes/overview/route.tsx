@@ -18,6 +18,7 @@ import { SessionsBlock } from "./components/sessions-block/sessions-block";
 import { CatalogueBlock } from "./components/catalogue-block/catalogue-block";
 import { LifetimeBlock } from "./components/lifetime-block/lifetime-block";
 import { RecordsBlock } from "./components/records-block/records-block";
+import { FailoverSaves } from "./components/failover-saves/failover-saves";
 import { SortableRow } from "./components/sortable-row/sortable-row";
 import { useRowOrder } from "./utils/use-row-order";
 
@@ -43,6 +44,7 @@ const DEFAULT_ROW_ORDER = [
     "latency",
     "errorsSessions",
     "providers",
+    "failover",
     "indexers",
     "indexerApiUsage",
     "recordsCatalogue",
@@ -159,6 +161,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
             </div>
         ),
         providers: <ProviderScoreboard providers={stats.providers} window={window} />,
+        failover: <FailoverSaves failover={stats.failover} window={window} />,
         indexers: <IndexerScoreboard indexers={stats.indexers} />,
         indexerApiUsage: <IndexerApiUsage rows={stats.indexerApiUsage} />,
         recordsCatalogue: (

@@ -548,6 +548,26 @@ export type OverviewStatsResponse = {
         bestHourBytes: number,
         bestHourAt: number | null,
     },
+    failover: FailoverBlock,
+}
+
+export type FailoverBlock = {
+    articlesRecovered: number,
+    readsSaved: number,
+    bucketSizeMs: number,
+    providers: FailoverProvider[],
+    buckets: FailoverBucket[],
+}
+
+export type FailoverProvider = {
+    provider: string,
+    nickname?: string | null,
+    saves: number,
+}
+
+export type FailoverBucket = {
+    bucket: number,
+    counts: number[],
 }
 
 export type ThroughputPoint = {

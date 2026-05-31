@@ -10,6 +10,7 @@ public class ReadSession
     public long? FileSize { get; set; }
     public long BytesServed { get; set; }
     public long BytesFetched { get; set; }
+    public int FailoverSaves { get; set; }
     public string? ClientUserAgent { get; set; }
     public string? ClientIp { get; set; }
     public EndReasonCode EndReason { get; set; }

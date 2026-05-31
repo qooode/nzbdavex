@@ -136,12 +136,13 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
         // ON CONFLICT — the tracker is the sole writer of that column.
         await db.Database.ExecuteSqlRawAsync(
             """
-            INSERT INTO ProviderMinutes (Minute, Provider, Articles, BytesFetched, Errors, Retries, SumDurationMs, Hist)
+            INSERT INTO ProviderMinutes (Minute, Provider, Articles, BytesFetched, Errors, Retries, FailoverSaves, SumDurationMs, Hist)
             SELECT {0}, Provider,
                 COUNT(*),
                 0,
                 SUM(CASE WHEN Status <> 0 THEN 1 ELSE 0 END),
                 SUM(Retries),
+                SUM(CASE WHEN Status = 0 AND Retries > 0 THEN 1 ELSE 0 END),
                 SUM(DurationMs),
                 NULL
             FROM SegmentFetches
@@ -151,6 +152,7 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
                 Articles      = excluded.Articles,
                 Errors        = excluded.Errors,
                 Retries       = excluded.Retries,
+                FailoverSaves = excluded.FailoverSaves,
                 SumDurationMs = excluded.SumDurationMs;
             """,
             minute, next).ConfigureAwait(false);
@@ -161,12 +163,13 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
         var next = hour + OneHour;
         await db.Database.ExecuteSqlRawAsync(
             """
-            INSERT INTO ProviderHourly (Hour, Provider, Articles, BytesFetched, Errors, Retries, SumDurationMs, P95DurationMs)
+            INSERT INTO ProviderHourly (Hour, Provider, Articles, BytesFetched, Errors, Retries, FailoverSaves, SumDurationMs, P95DurationMs)
             SELECT {0}, Provider,
                 SUM(Articles),
                 SUM(BytesFetched),
                 SUM(Errors),
                 SUM(Retries),
+                SUM(FailoverSaves),
                 SUM(SumDurationMs),
                 NULL
             FROM ProviderMinutes
@@ -177,6 +180,7 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
                 BytesFetched  = excluded.BytesFetched,
                 Errors        = excluded.Errors,
                 Retries       = excluded.Retries,
+                FailoverSaves = excluded.FailoverSaves,
                 SumDurationMs = excluded.SumDurationMs;
             """,
             hour, next).ConfigureAwait(false);
