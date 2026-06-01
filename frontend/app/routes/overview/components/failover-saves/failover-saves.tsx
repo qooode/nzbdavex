@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import styles from "./failover-saves.module.css";
 import type { FailoverBlock, OverviewWindow } from "~/clients/backend-client.server";
 import { formatNumber } from "../../utils/format";
@@ -7,8 +7,6 @@ export type FailoverSavesProps = {
     failover: FailoverBlock,
     window: OverviewWindow,
 }
-
-const MIN_TREND_BUCKETS = 4;
 
 export function FailoverSaves({ failover, window }: FailoverSavesProps) {
     const {
@@ -24,8 +22,6 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
         () => buckets.map(b => ({ bucket: b.bucket, total: b.counts.reduce((s, c) => s + c, 0) })),
         [buckets]
     );
-    const maxBucket = useMemo(() => Math.max(1, ...bucketTotals.map(b => b.total)), [bucketTotals]);
-    const nonEmptyBuckets = useMemo(() => bucketTotals.filter(b => b.total > 0).length, [bucketTotals]);
     const peak = useMemo(() => {
         let best: { bucket: number, total: number } | null = null;
         for (const b of bucketTotals) if (!best || b.total > best.total) best = b;
@@ -200,20 +196,8 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                         </div>
                     ) : null}
 
-                    {nonEmptyBuckets >= MIN_TREND_BUCKETS && (
-                        <div className={styles.trend}>
-                            <div className={styles.sectionHead}>Trend</div>
-                            <div className={styles.spark}>
-                                {bucketTotals.map(b => (
-                                    <span
-                                        key={b.bucket}
-                                        className={styles.sparkBar}
-                                        style={{ height: `${(b.total === 0 ? 3 : Math.max(12, (b.total / maxBucket) * 100)).toFixed(0)}%` }}
-                                        title={`${formatBucket(b.bucket, bucketSizeMs)}: ${formatNumber(b.total)}`}
-                                    />
-                                ))}
-                            </div>
-                        </div>
+                    {bucketTotals.length >= 3 && (
+                        <SavesTrend bucketTotals={bucketTotals} bucketSizeMs={bucketSizeMs} />
                     )}
 
                     {peak && peak.total > 0 && (
@@ -231,6 +215,119 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+const VB_W = 800;
+const VB_H = 120;
+const TOP_PAD = 8;
+const BOT_PAD = 4;
+
+function SavesTrend({ bucketTotals, bucketSizeMs }: { bucketTotals: { bucket: number, total: number }[], bucketSizeMs: number }) {
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+    const series = useMemo(() => {
+        let run = 0;
+        return bucketTotals.map(b => {
+            run += b.total;
+            return { bucket: b.bucket, delta: b.total, cum: run };
+        });
+    }, [bucketTotals]);
+
+    const total = series.length ? series[series.length - 1].cum : 0;
+
+    const { linePath, areaPath, xPercent, yPercent } = useMemo(() => {
+        const n = series.length;
+        if (n === 0) return { linePath: "", areaPath: "", xPercent: (_: number) => 0, yPercent: (_: number) => 0 };
+        const max = Math.max(1, total);
+        const xStep = n > 1 ? VB_W / (n - 1) : 0;
+        const innerH = VB_H - TOP_PAD - BOT_PAD;
+        const baseline = VB_H - BOT_PAD;
+        const x = (i: number) => i * xStep;
+        const y = (v: number) => baseline - (v / max) * innerH;
+        const line = series.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.cum).toFixed(1)}`).join(" ");
+        const area = `M0,${baseline.toFixed(1)} ${series.map((p, i) => `L${x(i).toFixed(1)},${y(p.cum).toFixed(1)}`).join(" ")} L${x(n - 1).toFixed(1)},${baseline.toFixed(1)} Z`;
+        return {
+            linePath: line,
+            areaPath: area,
+            xPercent: (i: number) => n > 1 ? (i / (n - 1)) * 100 : 50,
+            yPercent: (v: number) => (y(v) / VB_H) * 100,
+        };
+    }, [series, total]);
+
+    const xTicks = useMemo(() => {
+        const n = series.length;
+        if (n === 0) return [];
+        const count = Math.min(4, n);
+        return Array.from({ length: count }, (_, i) => {
+            const idx = count < 2 ? 0 : Math.round((n - 1) * (i / (count - 1)));
+            return { idx, label: formatBucket(series[idx].bucket, bucketSizeMs) };
+        });
+    }, [series, bucketSizeMs]);
+
+    const onMove = (clientX: number, target: HTMLElement) => {
+        const n = series.length;
+        if (n === 0) return;
+        const rect = target.getBoundingClientRect();
+        const rel = (clientX - rect.left) / rect.width;
+        const idx = Math.round(rel * (n - 1));
+        setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
+    };
+
+    if (total === 0) return null;
+    const hover = hoverIdx !== null ? series[hoverIdx] : null;
+    const midY = (TOP_PAD + (VB_H - BOT_PAD)) / 2;
+
+    return (
+        <div className={styles.trend}>
+            <div className={styles.trendHead}>
+                <span className={styles.sectionHead}>Saves over time</span>
+                <span className={styles.trendReadout}>
+                    {hover ? (
+                        <>
+                            <strong>{formatBucket(hover.bucket, bucketSizeMs)}</strong>
+                            &nbsp;·&nbsp;{formatNumber(hover.cum)} of {formatNumber(total)} saved
+                            {hover.delta > 0 && <> · +{formatNumber(hover.delta)}</>}
+                        </>
+                    ) : (
+                        <>cumulative · hover for detail</>
+                    )}
+                </span>
+            </div>
+            <div className={styles.trendPlot}>
+                <div className={styles.trendYAxis}>
+                    <span>{formatNumber(total)}</span>
+                    <span>{formatNumber(Math.round(total / 2))}</span>
+                    <span>0</span>
+                </div>
+                <div
+                    className={styles.trendArea}
+                    onMouseMove={e => onMove(e.clientX, e.currentTarget)}
+                    onMouseLeave={() => setHoverIdx(null)}
+                    onTouchStart={e => { const t = e.touches[0]; if (t) onMove(t.clientX, e.currentTarget); }}
+                    onTouchMove={e => { const t = e.touches[0]; if (t) onMove(t.clientX, e.currentTarget); }}
+                >
+                    <svg viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" className={styles.trendSvg}>
+                        <line x1="0" y1={(VB_H - BOT_PAD).toFixed(1)} x2={VB_W} y2={(VB_H - BOT_PAD).toFixed(1)} className={styles.trendGrid} />
+                        <line x1="0" y1={midY.toFixed(1)} x2={VB_W} y2={midY.toFixed(1)} className={styles.trendGrid} />
+                        <line x1="0" y1={TOP_PAD.toFixed(1)} x2={VB_W} y2={TOP_PAD.toFixed(1)} className={styles.trendGrid} />
+                        <path d={areaPath} className={styles.trendFill} />
+                        <path d={linePath} className={styles.trendLine} />
+                    </svg>
+                    {hover && hoverIdx !== null && (
+                        <>
+                            <div className={styles.trendCrosshair} style={{ left: `${xPercent(hoverIdx)}%` }} />
+                            <div className={styles.trendDot} style={{ left: `${xPercent(hoverIdx)}%`, top: `${yPercent(hover.cum)}%` }} />
+                        </>
+                    )}
+                </div>
+            </div>
+            <div className={styles.trendXAxis}>
+                {xTicks.map(t => (
+                    <span key={t.idx} className={styles.trendXTick} style={{ left: `${xPercent(t.idx)}%` }}>{t.label}</span>
+                ))}
+            </div>
         </div>
     );
 }
