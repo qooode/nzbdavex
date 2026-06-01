@@ -140,13 +140,21 @@
     font-size: 13px;
 }
 
-.fallbackThresholdInput {
-    width: 52px;
+.fallbackThresholdRow .fallbackThresholdInput {
+    width: 46px;
     flex: 0 0 auto;
     margin-bottom: 0;
-    padding: 2px 6px;
-    height: auto;
-    font-size: 13px;
-    line-height: 1.4;
+    padding: 3px 8px !important;
+    height: auto !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
     text-align: center;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.fallbackThresholdRow .fallbackThresholdInput::-webkit-outer-spin-button,
+.fallbackThresholdRow .fallbackThresholdInput::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
