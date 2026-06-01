@@ -59,6 +59,10 @@ public class MetricsRetentionService : BackgroundService
                 "DELETE FROM ReadSessions WHERE EndedAt < {0}", Cutoff(nowMs, SessionTtl)).ConfigureAwait(false);
             await db.Database.ExecuteSqlRawAsync(
                 "DELETE FROM ProviderHourly WHERE Hour < {0}", Cutoff(nowMs, HourlyRollupTtl)).ConfigureAwait(false);
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM FailoverMisses WHERE At < {0}", Cutoff(nowMs, FetchTtl)).ConfigureAwait(false);
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM FailoverHourly WHERE Hour < {0}", Cutoff(nowMs, HourlyRollupTtl)).ConfigureAwait(false);
 
             await db.Database.ExecuteSqlRawAsync("PRAGMA incremental_vacuum;").ConfigureAwait(false);
         }

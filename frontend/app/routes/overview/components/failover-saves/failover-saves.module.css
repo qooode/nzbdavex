@@ -29,7 +29,7 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 14px;
 }
 
 .heroNum {
@@ -39,10 +39,12 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.03em;
     line-height: 0.95;
+    flex-shrink: 0;
 }
 
 .heroText {
     min-width: 0;
+    flex: 1;
 }
 
 .heroLabel {
@@ -62,6 +64,166 @@
     font-weight: 600;
 }
 
+.momentum {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    line-height: 1.1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+}
+
+.momentumArrow {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.momentumBad .momentumArrow, .momentumBad .momentumPct { color: var(--danger-muted); }
+.momentumGood .momentumArrow, .momentumGood .momentumPct { color: var(--success); }
+
+.momentumPct {
+    font-size: 15px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.momentumWhen {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.reads {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.reads strong {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.readsMuted {
+    color: var(--text-muted);
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    min-width: 0;
+}
+
+.cardKicker {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.cardName {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.cardStat {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+}
+
+.cardStat span {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.cardStatGood { color: var(--success); }
+.cardStatBad { color: var(--danger-muted); }
+
+.reasons {
+    margin-bottom: 16px;
+}
+
+.sectionHead {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.reasonBar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-surface);
+    gap: 1px;
+}
+
+.reasonSeg {
+    height: 100%;
+    min-width: 2px;
+}
+
+.reasonLegend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 8px;
+}
+
+.reasonChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.reasonChip strong {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.rMissing { background: #71717a; }
+.rTimeout { background: #ca8a04; }
+.rAuth { background: #0284c7; }
+.rNetwork { background: #dc2626; }
+.rCorrupt { background: #9333ea; }
+.rOther { background: #52525b; }
+
 .rankHead {
     display: flex;
     justify-content: space-between;
@@ -71,11 +233,13 @@
     color: var(--text-muted);
     padding-bottom: 6px;
     border-bottom: 1px solid var(--border-subtle);
+    margin-top: 4px;
 }
 
 .bars {
     display: flex;
     flex-direction: column;
+    margin-bottom: 8px;
 }
 
 .row {
@@ -117,8 +281,12 @@
     background: linear-gradient(to right, rgba(52, 211, 153, 0.55), var(--success));
 }
 
+.barFillBad {
+    background: linear-gradient(to right, rgba(248, 113, 113, 0.5), var(--danger-muted));
+}
+
 .count {
-    width: 46px;
+    width: 52px;
     flex-shrink: 0;
     text-align: right;
     font-size: 13px;
@@ -136,10 +304,37 @@
     font-variant-numeric: tabular-nums;
 }
 
+.trend {
+    margin-top: 12px;
+}
+
+.spark {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 36px;
+}
+
+.sparkBar {
+    flex: 1;
+    min-width: 2px;
+    background: linear-gradient(to top, rgba(250, 250, 250, 0.35), var(--accent));
+    border-radius: 2px 2px 0 0;
+    transition: opacity 0.1s;
+}
+
+.sparkBar:hover {
+    opacity: 0.7;
+}
+
 .footnote {
     margin-top: 12px;
     font-size: 11px;
     color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
 }
 
 .empty {

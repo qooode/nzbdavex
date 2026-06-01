@@ -164,6 +164,7 @@ public class MultiProviderNntpClient(
         var attribution = AttributionContext.Value;
         if (attribution != null) attribution.Host = null;
         ExceptionDispatchInfo? lastException = null;
+        List<(string Host, SegmentFetch.FetchStatus Reason)>? priorMisses = null;
         var orderedProviders = GetOrderedProviders();
         for (var i = 0; i < orderedProviders.Count; i++)
         {
@@ -187,6 +188,7 @@ public class MultiProviderNntpClient(
                 if (!isLastProvider && result.ResponseType == UsenetResponseType.NoArticleWithThatMessageId)
                 {
                     RecordFetch(provider.Host, SegmentFetch.FetchStatus.Missing, stopwatch.ElapsedMilliseconds, i);
+                    (priorMisses ??= new()).Add((provider.Host, SegmentFetch.FetchStatus.Missing));
                     continue;
                 }
 
@@ -202,7 +204,11 @@ public class MultiProviderNntpClient(
                 {
                     usageTracker.RecordSuccess(provider.Host);
                     RecordFetch(provider.Host, SegmentFetch.FetchStatus.Ok, stopwatch.ElapsedMilliseconds, i);
-                    if (i > 0) usageTracker.RecordFailoverSave();
+                    if (i > 0)
+                    {
+                        usageTracker.RecordFailoverSave();
+                        RecordFailoverMisses(priorMisses, rescuer: provider.Host);
+                    }
                     result = WrapStreamForByteCounting(result, provider.Host);
                 }
                 else
@@ -215,7 +221,9 @@ public class MultiProviderNntpClient(
             catch (Exception e) when (!e.IsCancellationException())
             {
                 stopwatch.Stop();
-                RecordFetch(provider.Host, ClassifyException(e), stopwatch.ElapsedMilliseconds, i);
+                var reason = ClassifyException(e);
+                RecordFetch(provider.Host, reason, stopwatch.ElapsedMilliseconds, i);
+                (priorMisses ??= new()).Add((provider.Host, reason));
                 lastException = ExceptionDispatchInfo.Capture(e);
             }
         }
@@ -237,6 +245,24 @@ public class MultiProviderNntpClient(
             Status = status,
             Retries = retries,
         });
+    }
+
+    private void RecordFailoverMisses(
+        List<(string Host, SegmentFetch.FetchStatus Reason)>? priorMisses,
+        string rescuer)
+    {
+        if (metricsWriter == null || priorMisses == null) return;
+        var at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var (from, reason) in priorMisses)
+        {
+            metricsWriter.RecordFailoverMiss(new FailoverMiss
+            {
+                At = at,
+                FromProvider = from,
+                ToProvider = rescuer,
+                Reason = reason,
+            });
+        }
     }
 
     private T WrapStreamForByteCounting<T>(T result, string host) where T : UsenetResponse

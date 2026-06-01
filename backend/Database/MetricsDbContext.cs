@@ -31,6 +31,8 @@ public sealed class MetricsDbContext() : DbContext(Options.Value)
     public DbSet<ThroughputMinute> ThroughputMinutes => Set<ThroughputMinute>();
     public DbSet<ProviderMinute> ProviderMinutes => Set<ProviderMinute>();
     public DbSet<ProviderHourly> ProviderHourly => Set<ProviderHourly>();
+    public DbSet<FailoverMiss> FailoverMisses => Set<FailoverMiss>();
+    public DbSet<FailoverHourly> FailoverHourly => Set<FailoverHourly>();
     public DbSet<CatalogueDaily> CatalogueDaily => Set<CatalogueDaily>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -120,6 +122,30 @@ public sealed class MetricsDbContext() : DbContext(Options.Value)
             e.Property(x => x.Retries).IsRequired();
             e.Property(x => x.FailoverSaves).IsRequired();
             e.Property(x => x.SumDurationMs).IsRequired();
+        });
+
+        b.Entity<FailoverMiss>(e =>
+        {
+            e.ToTable("FailoverMisses");
+            e.HasKey(x => x.Id);
+
+            e.Property(x => x.At).IsRequired();
+            e.Property(x => x.FromProvider).IsRequired().HasMaxLength(255);
+            e.Property(x => x.ToProvider).IsRequired().HasMaxLength(255);
+            e.Property(x => x.Reason).HasConversion<int>().IsRequired();
+
+            e.HasIndex(x => x.At);
+        });
+
+        b.Entity<FailoverHourly>(e =>
+        {
+            e.ToTable("FailoverHourly");
+            e.HasKey(x => new { x.Hour, x.FromProvider, x.ToProvider, x.Reason });
+
+            e.Property(x => x.FromProvider).IsRequired().HasMaxLength(255);
+            e.Property(x => x.ToProvider).IsRequired().HasMaxLength(255);
+            e.Property(x => x.Reason).HasConversion<int>().IsRequired();
+            e.Property(x => x.Count).IsRequired();
         });
 
         b.Entity<CatalogueDaily>(e =>

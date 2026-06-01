@@ -165,9 +165,15 @@ public class GetOverviewStatsResponse
     public class FailoverBlock
     {
         public long ArticlesRecovered { get; init; }
+        public long? PreviousArticlesRecovered { get; init; }
+        public long SegmentsCovered { get; init; }
         public long ReadsSaved { get; init; }
+        public long ReadSessions { get; init; }
+        public long TotalArticles { get; init; }
         public long BucketSizeMs { get; init; }
-        public List<FailoverProvider> Providers { get; init; } = new();
+        public List<FailoverProvider> RescuedBy { get; init; } = new();
+        public List<FailoverFrom> RescuedFrom { get; init; } = new();
+        public List<FailoverReason> Reasons { get; init; } = new();
         public List<FailoverBucket> Buckets { get; init; } = new();
     }
 
@@ -176,6 +182,19 @@ public class GetOverviewStatsResponse
         public string Provider { get; init; } = "";
         public string? Nickname { get; init; }
         public long Saves { get; init; }
+    }
+
+    public class FailoverFrom
+    {
+        public string Provider { get; init; } = "";
+        public string? Nickname { get; init; }
+        public long Misses { get; init; }
+    }
+
+    public class FailoverReason
+    {
+        public string Status { get; init; } = "";
+        public long Count { get; init; }
     }
 
     public class FailoverBucket

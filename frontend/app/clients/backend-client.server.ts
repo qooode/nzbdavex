@@ -553,9 +553,15 @@ export type OverviewStatsResponse = {
 
 export type FailoverBlock = {
     articlesRecovered: number,
+    previousArticlesRecovered: number | null,
+    segmentsCovered: number,
     readsSaved: number,
+    readSessions: number,
+    totalArticles: number,
     bucketSizeMs: number,
-    providers: FailoverProvider[],
+    rescuedBy: FailoverProvider[],
+    rescuedFrom: FailoverFrom[],
+    reasons: FailoverReason[],
     buckets: FailoverBucket[],
 }
 
@@ -563,6 +569,17 @@ export type FailoverProvider = {
     provider: string,
     nickname?: string | null,
     saves: number,
+}
+
+export type FailoverFrom = {
+    provider: string,
+    nickname?: string | null,
+    misses: number,
+}
+
+export type FailoverReason = {
+    status: string,
+    count: number,
 }
 
 export type FailoverBucket = {

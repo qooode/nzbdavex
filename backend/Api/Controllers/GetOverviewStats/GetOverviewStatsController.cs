@@ -74,6 +74,15 @@ public class GetOverviewStatsController(
         var readsSaved = sessions.LongCount(s => s.FailoverSaves > 0);
         var failoverBucket = ResolveFailoverBucket(window);
 
+        long? previousSaves = null;
+        if (window != GetOverviewStatsRequest.OverviewWindow.AllTime)
+        {
+            var prevStart = windowStart - windowMs;
+            previousSaves = await metrics.ProviderHourly
+                .Where(h => h.Hour >= prevStart && h.Hour < windowStart)
+                .SumAsync(h => (long?)h.FailoverSaves).ConfigureAwait(false) ?? 0L;
+        }
+
         var heatmap = await BuildHeatmapAsync(metrics, window, nowMs).ConfigureAwait(false);
 
         if (useRollups)
@@ -91,9 +100,14 @@ public class GetOverviewStatsController(
             totalArticles = hours.Sum(h => h.Articles);
             totalErrors = hours.Sum(h => h.Errors);
             totalBytesFetched = hours.Sum(h => h.BytesFetched);
+            var failoverEdges = await metrics.FailoverHourly
+                .Where(f => f.Hour >= windowStart)
+                .Select(f => new { f.FromProvider, f.Reason, f.Count })
+                .ToListAsync().ConfigureAwait(false);
             failover = BuildFailover(
                 hours.Where(h => h.FailoverSaves > 0).Select(h => (h.Hour, h.Provider, h.FailoverSaves)),
-                readsSaved, failoverBucket, nicknamesByHost);
+                failoverEdges.Select(e => (e.FromProvider, e.Reason, e.Count)),
+                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByHost);
         }
         else
         {
@@ -121,10 +135,15 @@ public class GetOverviewStatsController(
             totalArticles = throughput.Sum(p => p.Articles);
             totalErrors = throughput.Sum(p => p.Errors);
             totalBytesFetched = perMinuteBytes.Values.Sum();
+            var failoverEdges = await metrics.FailoverMisses
+                .Where(f => f.At >= windowStart)
+                .Select(f => new { f.FromProvider, f.Reason })
+                .ToListAsync().ConfigureAwait(false);
             failover = BuildFailover(
                 fetches.Where(f => f.Status == SegmentFetch.FetchStatus.Ok && f.Retries > 0)
                     .Select(f => (f.At, f.Provider, 1L)),
-                readsSaved, failoverBucket, nicknamesByHost);
+                failoverEdges.Select(e => (e.FromProvider, e.Reason, 1L)),
+                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByHost);
         }
 
         var catalogue = await BuildCatalogueAsync().ConfigureAwait(false);
@@ -205,7 +224,11 @@ public class GetOverviewStatsController(
 
     private static GetOverviewStatsResponse.FailoverBlock BuildFailover(
         IEnumerable<(long At, string Provider, long Saves)> rescues,
+        IEnumerable<(string From, SegmentFetch.FetchStatus Reason, long Count)> misses,
+        long totalArticles,
+        long readSessions,
         long readsSaved,
+        long? previousSaves,
         long chartBucketSize,
         IReadOnlyDictionary<string, string?> nicknamesByHost)
     {
@@ -233,17 +256,52 @@ public class GetOverviewStatsController(
             .Select((p, i) => (p, i))
             .ToDictionary(x => x.p, x => x.i);
 
+        var missesByProvider = new Dictionary<string, long>();
+        var missesByReason = new Dictionary<SegmentFetch.FetchStatus, long>();
+        long segmentsCovered = 0;
+        foreach (var (from, reason, count) in misses)
+        {
+            if (count <= 0) continue;
+            segmentsCovered += count;
+            missesByProvider.TryGetValue(from, out var m);
+            missesByProvider[from] = m + count;
+            missesByReason.TryGetValue(reason, out var r);
+            missesByReason[reason] = r + count;
+        }
+
         return new GetOverviewStatsResponse.FailoverBlock
         {
             ArticlesRecovered = totalsByProvider.Values.Sum(),
+            PreviousArticlesRecovered = previousSaves,
+            SegmentsCovered = segmentsCovered,
             ReadsSaved = readsSaved,
+            ReadSessions = readSessions,
+            TotalArticles = totalArticles,
             BucketSizeMs = chartBucketSize,
-            Providers = orderedProviders
+            RescuedBy = orderedProviders
                 .Select(p => new GetOverviewStatsResponse.FailoverProvider
                 {
                     Provider = p,
                     Nickname = nicknamesByHost.GetValueOrDefault(p),
                     Saves = totalsByProvider[p],
+                })
+                .ToList(),
+            RescuedFrom = missesByProvider
+                .OrderByDescending(kv => kv.Value)
+                .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(kv => new GetOverviewStatsResponse.FailoverFrom
+                {
+                    Provider = kv.Key,
+                    Nickname = nicknamesByHost.GetValueOrDefault(kv.Key),
+                    Misses = kv.Value,
+                })
+                .ToList(),
+            Reasons = missesByReason
+                .OrderByDescending(kv => kv.Value)
+                .Select(kv => new GetOverviewStatsResponse.FailoverReason
+                {
+                    Status = kv.Key.ToString(),
+                    Count = kv.Value,
                 })
                 .ToList(),
             Buckets = byBucket

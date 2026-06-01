@@ -56,7 +56,10 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
         {
             await RollupMinuteAsync(db, minute).ConfigureAwait(false);
             if (minute % OneHour == 0 && minute > 0)
+            {
                 await RollupHourAsync(db, minute - OneHour).ConfigureAwait(false);
+                await RollupFailoverHourAsync(db, minute - OneHour).ConfigureAwait(false);
+            }
             _lastMinuteRolled = minute;
         }
 
@@ -182,6 +185,22 @@ public class MetricsRollupService(ProviderBytesTracker bytesTracker) : Backgroun
                 Retries       = excluded.Retries,
                 FailoverSaves = excluded.FailoverSaves,
                 SumDurationMs = excluded.SumDurationMs;
+            """,
+            hour, next).ConfigureAwait(false);
+    }
+
+    private static async Task RollupFailoverHourAsync(MetricsDbContext db, long hour)
+    {
+        var next = hour + OneHour;
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO FailoverHourly (Hour, FromProvider, ToProvider, Reason, Count)
+            SELECT {0}, FromProvider, ToProvider, Reason, COUNT(*)
+            FROM FailoverMisses
+            WHERE At >= {0} AND At < {1}
+            GROUP BY FromProvider, ToProvider, Reason
+            ON CONFLICT(Hour, FromProvider, ToProvider, Reason) DO UPDATE SET
+                Count = excluded.Count;
             """,
             hour, next).ConfigureAwait(false);
     }
