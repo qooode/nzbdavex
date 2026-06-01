@@ -158,16 +158,18 @@ function effThreshold(explicit: number | undefined, legacy: number | undefined):
     return FALLBACK_DEFAULT_THRESHOLD;
 }
 
-function fallbackHelp(mode: FallbackMode, allowBroad: boolean): string {
-    if (mode === "Title") {
-        return allowBroad
-            ? "Adds ~1 query per indexer (title + season/episode). Hits naming a different episode are dropped."
-            : "Adds ~1 query per indexer. Matches by title, so slightly less precise than an exact ID match.";
-    }
-    if (mode === "Broad") {
-        return "Adds up to 2 queries per indexer — including a whole-show query to catch untagged specials. Hits naming a different episode are dropped.";
-    }
-    return "";
+function fallbackHelp(mode: FallbackMode, allowBroad: boolean, indexerCount: number): string {
+    if (mode === "Off") return "";
+    const what = mode === "Broad"
+        ? "Title + episode, then a whole-show query that also catches untagged specials."
+        : allowBroad
+            ? "Title + episode; wrong episodes are filtered out."
+            : "Title search.";
+    if (indexerCount <= 0) return what;
+    const total = (mode === "Broad" ? 2 : 1) * indexerCount;
+    const q = total === 1 ? "query" : "queries";
+    const idxs = indexerCount === 1 ? "indexer" : "indexers";
+    return `${what} Up to ${total} extra ${q} per search across this profile's ${indexerCount} ${idxs}.`;
 }
 
 interface FallbackControlProps {
@@ -175,23 +177,28 @@ interface FallbackControlProps {
     mode: FallbackMode;
     threshold: number;
     allowBroad: boolean;
+    indexerCount: number;
+    disabled: boolean;
     onModeChange: (mode: FallbackMode) => void;
     onThresholdChange: (n: number) => void;
 }
 
-function FallbackControl({ label, mode, threshold, allowBroad, onModeChange, onThresholdChange }: FallbackControlProps) {
+function FallbackControl({ label, mode, threshold, allowBroad, indexerCount, disabled, onModeChange, onThresholdChange }: FallbackControlProps) {
     return (
         <Form.Group>
             <Form.Label>{label}</Form.Label>
             <Form.Select
                 className={styles.input}
                 value={mode}
+                disabled={disabled}
                 onChange={e => onModeChange(e.target.value as FallbackMode)}>
-                <option value="Off">Off — exact ID match only</option>
+                <option value="Off">Off (exact ID match only)</option>
                 <option value="Title">{allowBroad ? "Title + episode (precise)" : "Also search by title"}</option>
                 {allowBroad && <option value="Broad">Title + episode, then whole show (broad)</option>}
             </Form.Select>
-            {mode !== "Off" && (
+            {disabled ? (
+                <p className={styles.hint}>Add indexers in the Indexers tab to use fallback.</p>
+            ) : mode !== "Off" && (
                 <>
                     <div className={styles.fallbackThresholdRow}>
                         <span className={styles.fallbackThresholdLabel}>when the ID search finds fewer than</span>
@@ -207,7 +214,7 @@ function FallbackControl({ label, mode, threshold, allowBroad, onModeChange, onT
                             }} />
                         <span className={styles.fallbackThresholdLabel}>results</span>
                     </div>
-                    <p className={styles.hint}>{fallbackHelp(mode, allowBroad)}</p>
+                    <p className={styles.hint}>{fallbackHelp(mode, allowBroad, indexerCount)}</p>
                 </>
             )}
         </Form.Group>
@@ -241,6 +248,8 @@ function ProfileForm({ profile, index, availableIndexers, onChange, onRemove }: 
     const tvMode = effMode(profile.TvFallback, profile.QueryFallbackMinResults, true);
     const movieThreshold = effThreshold(profile.MovieFallbackMinResults, profile.QueryFallbackMinResults);
     const tvThreshold = effThreshold(profile.TvFallbackMinResults, profile.QueryFallbackMinResults);
+    const indexerCount = profile.IndexerNames.length > 0 ? profile.IndexerNames.length : availableIndexers.length;
+    const noIndexers = availableIndexers.length === 0;
 
     const writeFallback = useCallback((patch: Partial<Profile>) => {
         onChange(index, {
@@ -295,18 +304,26 @@ function ProfileForm({ profile, index, availableIndexers, onChange, onRemove }: 
                         ))}
                     </div>
                 </Form.Group>
+                <Form.Group>
+                    <Form.Label>Query fallback <span style={{ opacity: 0.6, fontWeight: 'normal' }}>(extra title searches when an ID lookup comes up short)</span></Form.Label>
+                    <p className={styles.hint}>These fire extra queries to this profile's indexers and spend their hit and rate limits, which you set per indexer in the Indexers tab.</p>
+                </Form.Group>
                 <FallbackControl
-                    label={<>Movie fallback <span style={{ opacity: 0.6, fontWeight: 'normal' }}>(also search by title when the ID lookup comes up short)</span></>}
+                    label="Movies"
                     mode={movieMode}
                     threshold={movieThreshold}
                     allowBroad={false}
+                    indexerCount={indexerCount}
+                    disabled={noIndexers}
                     onModeChange={m => writeFallback({ MovieFallback: m })}
                     onThresholdChange={n => writeFallback({ MovieFallbackMinResults: n })} />
                 <FallbackControl
-                    label={<>TV fallback <span style={{ opacity: 0.6, fontWeight: 'normal' }}>(broad also catches untagged specials; wrong episodes are filtered out)</span></>}
+                    label="TV"
                     mode={tvMode}
                     threshold={tvThreshold}
                     allowBroad={true}
+                    indexerCount={indexerCount}
+                    disabled={noIndexers}
                     onModeChange={m => writeFallback({ TvFallback: m })}
                     onThresholdChange={n => writeFallback({ TvFallbackMinResults: n })} />
             </Card.Body>
