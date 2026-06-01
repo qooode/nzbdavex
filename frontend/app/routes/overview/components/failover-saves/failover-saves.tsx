@@ -8,6 +8,8 @@ export type FailoverSavesProps = {
     window: OverviewWindow,
 }
 
+const MIN_TREND_BUCKETS = 4;
+
 export function FailoverSaves({ failover, window }: FailoverSavesProps) {
     const {
         articlesRecovered, previousArticlesRecovered, segmentsCovered,
@@ -23,6 +25,7 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
         [buckets]
     );
     const maxBucket = useMemo(() => Math.max(1, ...bucketTotals.map(b => b.total)), [bucketTotals]);
+    const nonEmptyBuckets = useMemo(() => bucketTotals.filter(b => b.total > 0).length, [bucketTotals]);
     const peak = useMemo(() => {
         let best: { bucket: number, total: number } | null = null;
         for (const b of bucketTotals) if (!best || b.total > best.total) best = b;
@@ -41,6 +44,8 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
     const oneIn = readsSaved > 0 ? Math.max(1, Math.round(readSessions / readsSaved)) : 0;
     const topHero = rescuedBy[0];
     const topVillain = rescuedFrom[0];
+    const hasContrast = Boolean(topHero && topVillain);
+    const multiProvider = rescuedBy.length >= 2;
 
     return (
         <div className={styles.container}>
@@ -65,7 +70,7 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                         </div>
                         {momentum && (
                             <div
-                                className={`${styles.momentum} ${momentum.good ? styles.momentumGood : styles.momentumBad}`}
+                                className={`${styles.momentum} ${momentum.neutral ? styles.momentumNeutral : momentum.good ? styles.momentumGood : styles.momentumBad}`}
                                 title={`Failover load ${momentum.label} vs the previous ${window}`}>
                                 <span className={styles.momentumArrow}>{momentum.arrow}</span>
                                 <span className={styles.momentumPct}>{momentum.text}</span>
@@ -83,7 +88,7 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                         </div>
                     )}
 
-                    {(topHero || topVillain) && (
+                    {hasContrast && (
                         <div className={styles.cards}>
                             {topHero && (
                                 <div className={styles.card}>
@@ -166,28 +171,36 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                         </>
                     )}
 
-                    <div className={styles.rankHead}>
-                        <span>Rescued by</span>
-                        <span>saves</span>
-                    </div>
-                    <div className={styles.bars}>
-                        {rescuedBy.map(p => {
-                            const width = (p.saves / maxSaves) * 100;
-                            const share = articlesRecovered > 0 ? (p.saves / articlesRecovered) * 100 : 0;
-                            return (
-                                <div key={p.provider} className={styles.row} title={p.provider}>
-                                    <span className={styles.name}>{p.nickname?.trim() || p.provider}</span>
-                                    <span className={styles.barTrack}>
-                                        <span className={styles.barFill} style={{ width: `${width.toFixed(1)}%` }} />
-                                    </span>
-                                    <span className={styles.count}>{formatNumber(p.saves)}</span>
-                                    <span className={styles.share}>{share.toFixed(0)}%</span>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    {multiProvider ? (
+                        <>
+                            <div className={styles.rankHead}>
+                                <span>Rescued by</span>
+                                <span>saves</span>
+                            </div>
+                            <div className={styles.bars}>
+                                {rescuedBy.map(p => {
+                                    const width = (p.saves / maxSaves) * 100;
+                                    const share = articlesRecovered > 0 ? (p.saves / articlesRecovered) * 100 : 0;
+                                    return (
+                                        <div key={p.provider} className={styles.row} title={p.provider}>
+                                            <span className={styles.name}>{p.nickname?.trim() || p.provider}</span>
+                                            <span className={styles.barTrack}>
+                                                <span className={styles.barFill} style={{ width: `${width.toFixed(1)}%` }} />
+                                            </span>
+                                            <span className={styles.count}>{formatNumber(p.saves)}</span>
+                                            <span className={styles.share}>{share.toFixed(0)}%</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    ) : (!hasContrast && topHero) ? (
+                        <div className={styles.solo}>
+                            Every rescue came through <strong>{topHero.nickname?.trim() || topHero.provider}</strong>
+                        </div>
+                    ) : null}
 
-                    {bucketTotals.length > 1 && (
+                    {nonEmptyBuckets >= MIN_TREND_BUCKETS && (
                         <div className={styles.trend}>
                             <div className={styles.sectionHead}>Trend</div>
                             <div className={styles.spark}>
@@ -195,7 +208,7 @@ export function FailoverSaves({ failover, window }: FailoverSavesProps) {
                                     <span
                                         key={b.bucket}
                                         className={styles.sparkBar}
-                                        style={{ height: `${Math.max(6, (b.total / maxBucket) * 100).toFixed(0)}%` }}
+                                        style={{ height: `${(b.total === 0 ? 3 : Math.max(12, (b.total / maxBucket) * 100)).toFixed(0)}%` }}
                                         title={`${formatBucket(b.bucket, bucketSizeMs)}: ${formatNumber(b.total)}`}
                                     />
                                 ))}
@@ -230,12 +243,12 @@ function formatSmallPercent(fraction: number): string {
     return "<0.01%";
 }
 
-type Momentum = { arrow: string, text: string, label: string, good: boolean };
+type Momentum = { arrow: string, text: string, label: string, good: boolean, neutral?: boolean };
 
 function computeMomentum(current: number, previous: number | null): Momentum | null {
     if (previous === null) return null;
     if (previous === 0 && current === 0) return null;
-    if (previous === 0) return { arrow: "↑", text: "new", label: "up from none", good: false };
+    if (previous === 0) return { arrow: "↑", text: "new", label: "up from none", good: false, neutral: true };
     const delta = ((current - previous) / previous) * 100;
     if (Math.abs(delta) < 3) return { arrow: "→", text: "flat", label: "holding flat", good: true };
     const up = delta > 0;

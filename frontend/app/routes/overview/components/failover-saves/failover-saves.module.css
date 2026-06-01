@@ -84,6 +84,7 @@
 
 .momentumBad .momentumArrow, .momentumBad .momentumPct { color: var(--danger-muted); }
 .momentumGood .momentumArrow, .momentumGood .momentumPct { color: var(--success); }
+.momentumNeutral .momentumArrow, .momentumNeutral .momentumPct { color: var(--text-secondary); }
 
 .momentumPct {
     font-size: 15px;
@@ -302,6 +303,25 @@
     font-size: 11px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
+}
+
+.solo {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin-top: 4px;
+}
+
+.solo strong {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .trend {

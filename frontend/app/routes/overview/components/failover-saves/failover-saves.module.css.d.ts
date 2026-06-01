@@ -11,6 +11,7 @@ declare const styles: {
   readonly momentum: string;
   readonly momentumBad: string;
   readonly momentumGood: string;
+  readonly momentumNeutral: string;
   readonly momentumArrow: string;
   readonly momentumPct: string;
   readonly momentumWhen: string;
@@ -45,6 +46,7 @@ declare const styles: {
   readonly barFillBad: string;
   readonly count: string;
   readonly share: string;
+  readonly solo: string;
   readonly trend: string;
   readonly spark: string;
   readonly sparkBar: string;
