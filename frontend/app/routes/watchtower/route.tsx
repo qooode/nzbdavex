@@ -1,6 +1,7 @@
 import type { Route } from "./+types/route";
 import { useEffect } from "react";
 import { useFetcher, useRevalidator } from "react-router";
+import { Form, Button } from "react-bootstrap";
 import styles from "./route.module.css";
 import { backendClient, type WatchtowerItem, type WatchtowerSource } from "~/clients/backend-client.server";
 
@@ -43,7 +44,7 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                         it stores segment maps, never video.
                     </div>
                 </div>
-                <div className={styles.statsBar}>
+                <div className={styles.stats}>
                     <Stat label="Ready" value={stats.ready} tone="ok" />
                     <Stat label="Scouting" value={stats.scouting} tone="warn" />
                     <Stat label="Unavailable" value={stats.unavailable} tone="bad" />
@@ -52,65 +53,65 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
             </div>
 
             {!enabled && (
-                <div className={styles.banner}>
-                    Watchtower is currently <b>off</b>. Enable it under <b>Settings → Watchtower</b> to
-                    start keeping these items ready. You can still add lists and items now.
+                <div className="alert alert-warning" role="alert">
+                    Watchtower is off. Enable it under Settings, Watchtower to start readying these items.
+                    You can still add lists and items now.
                 </div>
             )}
 
             {addFetcher.data && addFetcher.data.ok === false && (
-                <div className={styles.errorBox}>Action failed: {addFetcher.data.error}</div>
+                <div className="alert alert-danger" role="alert">Action failed: {addFetcher.data.error}</div>
             )}
 
-            <section className={styles.card}>
-                <div className={styles.cardTitle}>Lists</div>
-                <div className={styles.cardHint}>
-                    Any list that yields content ids: a Stremio catalog URL, a plain list URL, or
-                    manual additions. They merge into one deduped wanted-set.
+            <section className={styles.panel}>
+                <div className={styles.panelHead}>
+                    <div className={styles.panelTitle}>Lists</div>
+                    <div className={styles.panelHint}>
+                        Any list that yields content ids: a Stremio catalog URL, a plain list URL, or
+                        manual additions. They merge into one deduped wanted-set.
+                    </div>
                 </div>
 
                 {sources.length === 0
                     ? <div className={styles.empty}>No lists yet. Add one below.</div>
-                    : <div className={styles.sourceList}>
-                        {sources.map(s => <SourceRow key={s.id} source={s} />)}
-                    </div>}
+                    : <div className={styles.list}>{sources.map(s => <SourceRow key={s.id} source={s} />)}</div>}
 
-                <addFetcher.Form method="post" className={styles.addForm}>
+                <addFetcher.Form method="post" className={styles.addRow}>
                     <input type="hidden" name="action" value="add-source" />
-                    <select name="kind" className={styles.input} defaultValue="stremio-catalog">
+                    <Form.Select name="kind" defaultValue="stremio-catalog" className={styles.selectSm}>
                         <option value="stremio-catalog">Stremio catalog</option>
                         <option value="url-list">URL list</option>
-                    </select>
-                    <input name="name" className={styles.input} placeholder="Name (optional)" />
-                    <input name="url" className={styles.inputWide} placeholder="https://…/catalog/movie/xyz.json" />
-                    <input name="cap" className={styles.inputSmall} type="number" min={0} placeholder="cap" title="Per-list active cap (0 = use default)" />
-                    <button className={styles.btn} type="submit" disabled={addFetcher.state !== "idle"}>Add list</button>
+                    </Form.Select>
+                    <Form.Control name="name" placeholder="Name (optional)" className={styles.selectSm} />
+                    <Form.Control name="url" placeholder="https://addon/catalog/movie/xyz.json" className={styles.inputWide} />
+                    <Form.Control name="cap" type="number" min={0} placeholder="cap" className={styles.inputSm} title="Per-list active cap (0 = use default)" />
+                    <Button type="submit" variant="primary" disabled={addFetcher.state !== "idle"}>Add list</Button>
                 </addFetcher.Form>
             </section>
 
-            <section className={styles.card}>
-                <div className={styles.cardTitle}>Wanted</div>
-                <div className={styles.cardHint}>
-                    Each item is searched once, the biggest healthy release is verified, then re-checked
-                    over time. Add one manually by imdb id, or let your lists fill it.
+            <section className={styles.panel}>
+                <div className={styles.panelHead}>
+                    <div className={styles.panelTitle}>Wanted</div>
+                    <div className={styles.panelHint}>
+                        Each item is searched once, the biggest healthy release is verified, then
+                        re-checked over time. Add one manually by imdb id, or let your lists fill it.
+                    </div>
                 </div>
 
-                <addFetcher.Form method="post" className={styles.addForm}>
+                <addFetcher.Form method="post" className={styles.addRow}>
                     <input type="hidden" name="action" value="add-item" />
-                    <select name="type" className={styles.input} defaultValue="movie">
+                    <Form.Select name="type" defaultValue="movie" className={styles.selectSm}>
                         <option value="movie">movie</option>
                         <option value="series">series</option>
-                    </select>
-                    <input name="id" className={styles.inputWide} placeholder="tt0111161   (or tt…:1:2 for an episode)" />
-                    <input name="title" className={styles.input} placeholder="Title (optional)" />
-                    <button className={styles.btn} type="submit" disabled={addFetcher.state !== "idle"}>Add item</button>
+                    </Form.Select>
+                    <Form.Control name="id" placeholder="tt0111161  (or tt0903747:1:2 for an episode)" className={styles.inputWide} />
+                    <Form.Control name="title" placeholder="Title (optional)" className={styles.selectSm} />
+                    <Button type="submit" variant="primary" disabled={addFetcher.state !== "idle"}>Add item</Button>
                 </addFetcher.Form>
 
                 {items.length === 0
                     ? <div className={styles.empty}>Nothing wanted yet.</div>
-                    : <div className={styles.itemList}>
-                        {items.map(it => <ItemRow key={it.key} item={it} />)}
-                    </div>}
+                    : <div className={styles.list}>{items.map(it => <ItemRow key={it.key} item={it} />)}</div>}
             </section>
         </div>
     );
@@ -119,28 +120,28 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
 function SourceRow({ source }: { source: WatchtowerSource }) {
     const fetcher = useFetcher();
     return (
-        <div className={`${styles.sourceRow} ${source.enabled ? "" : styles.dimmed}`}>
-            <div className={styles.sourceMain}>
-                <span className={styles.kindBadge}>{source.kind}</span>
-                <span className={styles.sourceName}>{source.name}</span>
-                {source.url && <span className={styles.sourceUrl} title={source.url}>{source.url}</span>}
+        <div className={`${styles.row} ${source.enabled ? "" : styles.dimmed}`}>
+            <div className={styles.rowMain}>
+                <span className={styles.kind}>{source.kind}</span>
+                <span className={styles.name}>{source.name}</span>
+                {source.url && <span className={styles.url} title={source.url}>{source.url}</span>}
             </div>
-            <div className={styles.sourceMeta}>
+            <div className={styles.rowActions}>
                 {source.lastSyncError
-                    ? <span className={styles.syncErr} title={source.lastSyncError}>sync error</span>
+                    ? <span className={styles.metaBad} title={source.lastSyncError}>sync error</span>
                     : source.lastSyncedAtUnix
-                        ? <span className={styles.syncOk}>synced {formatAge(source.lastSyncedAtUnix)}</span>
-                        : <span className={styles.syncPending}>not synced yet</span>}
-                <fetcher.Form method="post" className={styles.inlineForm}>
+                        ? <span className={styles.metaOk}>synced {formatAge(source.lastSyncedAtUnix)}</span>
+                        : <span className={styles.meta}>not synced yet</span>}
+                <fetcher.Form method="post">
                     <input type="hidden" name="action" value="toggle-source" />
                     <input type="hidden" name="id" value={source.id} />
                     <input type="hidden" name="enabled" value={String(!source.enabled)} />
-                    <button className={styles.linkBtn} type="submit">{source.enabled ? "disable" : "enable"}</button>
+                    <button type="submit" className={styles.linkBtn}>{source.enabled ? "disable" : "enable"}</button>
                 </fetcher.Form>
-                <fetcher.Form method="post" className={styles.inlineForm}>
+                <fetcher.Form method="post">
                     <input type="hidden" name="action" value="remove-source" />
                     <input type="hidden" name="id" value={source.id} />
-                    <button className={`${styles.linkBtn} ${styles.danger}`} type="submit">remove</button>
+                    <button type="submit" className={`${styles.linkBtn} ${styles.linkDanger}`}>remove</button>
                 </fetcher.Form>
             </div>
         </div>
@@ -150,30 +151,28 @@ function SourceRow({ source }: { source: WatchtowerSource }) {
 function ItemRow({ item }: { item: WatchtowerItem }) {
     const fetcher = useFetcher();
     return (
-        <div className={styles.itemRow}>
-            <div className={styles.itemMain}>
+        <div className={styles.row}>
+            <div className={styles.rowMain}>
                 <StateChip state={item.state} />
                 <div className={styles.itemTitleWrap}>
                     <div className={styles.itemTitle} title={item.title}>{item.title}</div>
                     <div className={styles.itemSub}>
-                        <span className={styles.metaBadge}>{item.type}</span>
-                        <span className={styles.muted}>{item.contentId}</span>
+                        <span className={styles.kind}>{item.type}</span>
+                        <span className={styles.mono}>{item.contentId}</span>
                         {item.state === "ready" && item.winnerTitle && (
-                            <span className={styles.muted} title={item.winnerTitle}>
-                                · {formatBytes(item.winnerSize)} · {item.shortlistCount} pointer{item.shortlistCount === 1 ? "" : "s"}
+                            <span title={item.winnerTitle}>
+                                {formatBytes(item.winnerSize)} · {item.shortlistCount} pointer{item.shortlistCount === 1 ? "" : "s"}
                                 {item.lastVerifiedAtUnix ? ` · verified ${formatAge(item.lastVerifiedAtUnix)}` : ""}
                             </span>
                         )}
-                        {item.state === "unavailable" && item.failReason && (
-                            <span className={styles.muted}>· {item.failReason}</span>
-                        )}
+                        {item.state === "unavailable" && item.failReason && <span>{item.failReason}</span>}
                     </div>
                 </div>
             </div>
-            <fetcher.Form method="post" className={styles.inlineForm}>
+            <fetcher.Form method="post" className={styles.rowActions}>
                 <input type="hidden" name="action" value="remove-item" />
                 <input type="hidden" name="key" value={item.key} />
-                <button className={`${styles.linkBtn} ${styles.danger}`} type="submit">remove</button>
+                <button type="submit" className={`${styles.linkBtn} ${styles.linkDanger}`}>remove</button>
             </fetcher.Form>
         </div>
     );
@@ -191,10 +190,10 @@ function StateChip({ state }: { state: string }) {
     return <span className={`${styles.chip} ${cls}`}>{label}</span>;
 }
 
-function Stat({ label, value, tone }: { label: string, value: number, tone?: "ok" | "bad" | "warn" }) {
-    const toneClass = tone === "ok" ? styles.statValueOk
-        : tone === "bad" ? styles.statValueBad
-        : tone === "warn" ? styles.statValueWarn
+function Stat({ label, value, tone }: { label: string, value: number, tone?: "ok" | "warn" | "bad" }) {
+    const toneClass = tone === "ok" ? styles.statOk
+        : tone === "warn" ? styles.statWarn
+        : tone === "bad" ? styles.statBad
         : "";
     return (
         <div className={styles.stat}>

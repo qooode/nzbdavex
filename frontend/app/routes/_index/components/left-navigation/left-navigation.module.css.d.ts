@@ -16,6 +16,7 @@ declare const styles: {
   readonly "read-icon": string;
   readonly "title": string;
   readonly "watchdog-icon": string;
+  readonly "watchtower-icon": string;
   readonly "unstyled": string;
   readonly "selected": string;
 };
