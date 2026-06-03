@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +24,9 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         {
             case "add-source":
                 AddSource(form, now);
+                break;
+            case "add-sources":
+                await AddSourcesAsync(form, now, ct).ConfigureAwait(false);
                 break;
             case "remove-source":
                 await RemoveSourceAsync(form, now, ct).ConfigureAwait(false);
@@ -67,6 +71,49 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
             Cap = int.TryParse(form["cap"].ToString(), out var cap) ? Math.Max(0, cap) : 0,
             CreatedAtUnix = now,
         });
+    }
+
+    private async Task AddSourcesAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        var payload = form["sources"].ToString();
+        if (string.IsNullOrWhiteSpace(payload))
+            throw new BadHttpRequestException("No catalogs were selected.");
+
+        List<SourceInput>? inputs;
+        try
+        {
+            inputs = JsonSerializer.Deserialize<List<SourceInput>>(payload);
+        }
+        catch (Exception e)
+        {
+            throw new BadHttpRequestException($"Invalid catalog selection: {e.Message}");
+        }
+        if (inputs is null || inputs.Count == 0)
+            throw new BadHttpRequestException("No catalogs were selected.");
+
+        var existingUrls = (await dbClient.Ctx.ListSources
+                .Where(s => s.Url != null)
+                .Select(s => s.Url!)
+                .ToListAsync(ct).ConfigureAwait(false))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var input in inputs)
+        {
+            var url = input.Url?.Trim();
+            if (string.IsNullOrWhiteSpace(url)) continue;
+            if (!existingUrls.Add(url)) continue;
+
+            dbClient.Ctx.ListSources.Add(new ListSource
+            {
+                Id = Guid.NewGuid(),
+                Kind = ListSource.KindStremioCatalog,
+                Name = string.IsNullOrWhiteSpace(input.Name) ? url : input.Name!.Trim(),
+                Url = url,
+                Enabled = true,
+                Cap = input.Cap is > 0 ? input.Cap.Value : 0,
+                CreatedAtUnix = now,
+            });
+        }
     }
 
     private async Task RemoveSourceAsync(IFormCollection form, long now, CancellationToken ct)
@@ -180,6 +227,13 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         };
         dbClient.Ctx.ListSources.Add(manual);
         return manual;
+    }
+
+    private sealed class SourceInput
+    {
+        [JsonPropertyName("url")] public string? Url { get; set; }
+        [JsonPropertyName("name")] public string? Name { get; set; }
+        [JsonPropertyName("cap")] public int? Cap { get; set; }
     }
 }
 

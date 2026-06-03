@@ -23,27 +23,152 @@ public class ListSourceEnumerator
     {
         if (string.IsNullOrWhiteSpace(url)) return Array.Empty<WtContentRef>();
         var json = await HttpGetStringAsync(url!, ct).ConfigureAwait(false);
-        if (json is null) return Array.Empty<WtContentRef>();
-        var refs = new List<WtContentRef>();
-        try
+        if (json is null)
+            throw new InvalidOperationException("Catalog request failed or returned an empty response.");
+
+        using var doc = ParseOrThrow(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("metas", out var metas) && metas.ValueKind == JsonValueKind.Array)
         {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("metas", out var metas) && metas.ValueKind == JsonValueKind.Array)
+            var refs = new List<WtContentRef>();
+            foreach (var meta in metas.EnumerateArray())
             {
-                foreach (var meta in metas.EnumerateArray())
-                {
-                    var type = GetStr(meta, "type");
-                    var id = GetStr(meta, "id");
-                    if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(id)) continue;
-                    refs.Add(new WtContentRef { Type = NormalizeType(type!), ContentId = id!, Title = GetStr(meta, "name") });
-                }
+                var type = GetStr(meta, "type");
+                var id = GetStr(meta, "id");
+                if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(id)) continue;
+                refs.Add(new WtContentRef { Type = NormalizeType(type!), ContentId = id!, Title = GetStr(meta, "name") });
+            }
+            return refs;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            (root.TryGetProperty("catalogs", out _) || root.TryGetProperty("resources", out _)))
+        {
+            throw new InvalidOperationException(
+                "This URL is an addon manifest, not a catalog. Use \"Discover catalogs\" to pick which " +
+                "catalogs to add, or point this list at a catalog endpoint such as .../catalog/movie/<id>.json.");
+        }
+
+        throw new InvalidOperationException("Catalog response did not contain a \"metas\" array.");
+    }
+
+    public async Task<DiscoverResult> DiscoverCatalogsAsync(string url, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new InvalidOperationException("A manifest URL is required.");
+
+        var manifestUrl = NormalizeManifestUrl(url.Trim());
+        var json = await HttpGetStringAsync(manifestUrl, ct).ConfigureAwait(false);
+        if (json is null)
+            throw new InvalidOperationException($"Could not fetch the addon manifest at {manifestUrl}.");
+
+        using var doc = ParseOrThrow(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("catalogs", out var catalogs) || catalogs.ValueKind != JsonValueKind.Array)
+        {
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("metas", out _))
+                throw new InvalidOperationException(
+                    "That looks like a catalog endpoint, not a manifest. Add it directly as a Stremio catalog list.");
+            throw new InvalidOperationException("No catalogs were found in this addon manifest.");
+        }
+
+        var addonName = GetStr(root, "name");
+        var baseUrl = StripManifestSuffix(manifestUrl);
+        var choices = new List<CatalogChoice>();
+        foreach (var cat in catalogs.EnumerateArray())
+        {
+            if (cat.ValueKind != JsonValueKind.Object) continue;
+            var type = GetStr(cat, "type");
+            var id = GetStr(cat, "id");
+            if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(id)) continue;
+            var name = GetStr(cat, "name");
+            choices.Add(new CatalogChoice
+            {
+                Type = type!,
+                Id = id!,
+                Name = string.IsNullOrWhiteSpace(name) ? $"{type} · {id}" : name!,
+                Url = BuildCatalogUrl(baseUrl, type!, id!),
+                ExtraRequired = DescribeRequiredExtra(cat),
+            });
+        }
+
+        if (choices.Count == 0)
+            throw new InvalidOperationException("This addon manifest lists no usable catalogs.");
+
+        return new DiscoverResult { AddonName = addonName, Catalogs = choices };
+    }
+
+    private static string NormalizeManifestUrl(string url)
+    {
+        if (url.StartsWith("stremio://", StringComparison.OrdinalIgnoreCase))
+            url = "https://" + url["stremio://".Length..];
+        if (!url.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            url = url.TrimEnd('/') + "/manifest.json";
+        return url;
+    }
+
+    private static string StripManifestSuffix(string manifestUrl)
+    {
+        const string suffix = "/manifest.json";
+        if (manifestUrl.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            return manifestUrl[..^suffix.Length];
+        var slash = manifestUrl.LastIndexOf('/');
+        return slash > "https://".Length ? manifestUrl[..slash] : manifestUrl;
+    }
+
+    private static string BuildCatalogUrl(string baseUrl, string type, string id)
+        => $"{baseUrl}/catalog/{Uri.EscapeDataString(type)}/{Uri.EscapeDataString(id)}.json";
+
+    private static string? DescribeRequiredExtra(JsonElement cat)
+    {
+        var names = new List<string>();
+        if (cat.TryGetProperty("extra", out var extra) && extra.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var e in extra.EnumerateArray())
+            {
+                if (e.ValueKind != JsonValueKind.Object) continue;
+                if (!(e.TryGetProperty("isRequired", out var r) && r.ValueKind == JsonValueKind.True)) continue;
+                var nm = GetStr(e, "name");
+                if (!string.IsNullOrWhiteSpace(nm) && !nm!.Equals("skip", StringComparison.OrdinalIgnoreCase))
+                    names.Add(nm);
             }
         }
-        catch (Exception e)
+        else if (cat.TryGetProperty("extraRequired", out var er) && er.ValueKind == JsonValueKind.Array)
         {
-            Log.Debug(e, "Watchtower: failed to parse stremio catalog {Url}", url);
+            foreach (var e in er.EnumerateArray())
+            {
+                if (e.ValueKind != JsonValueKind.String) continue;
+                var nm = e.GetString();
+                if (!string.IsNullOrWhiteSpace(nm) && !nm!.Equals("skip", StringComparison.OrdinalIgnoreCase))
+                    names.Add(nm);
+            }
         }
-        return refs;
+        return names.Count > 0 ? string.Join(", ", names) : null;
+    }
+
+    private static JsonDocument ParseOrThrow(string json)
+    {
+        try { return JsonDocument.Parse(json); }
+        catch (Exception e) { throw new InvalidOperationException("The addon response was not valid JSON.", e); }
+    }
+
+    public sealed class CatalogChoice
+    {
+        public required string Type { get; init; }
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        public required string Url { get; init; }
+        public string? ExtraRequired { get; init; }
+    }
+
+    public sealed class DiscoverResult
+    {
+        public string? AddonName { get; init; }
+        public required IReadOnlyList<CatalogChoice> Catalogs { get; init; }
     }
 
     private static async Task<IReadOnlyList<WtContentRef>> FetchUrlListAsync(string? url, CancellationToken ct)

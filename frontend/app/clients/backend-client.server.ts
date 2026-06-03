@@ -343,6 +343,18 @@ class BackendClient {
         const data = await response.json();
         return data.status;
     }
+
+    public async discoverStremioCatalogs(manifestUrl: string): Promise<DiscoverCatalogsResponse> {
+        const url = process.env.BACKEND_URL + "/api/watchtower-discover-catalogs";
+        const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
+        const form = new FormData();
+        form.append("url", manifestUrl);
+        const response = await fetch(url, { method: "POST", headers: { "x-api-key": apiKey }, body: form });
+        if (!response.ok) {
+            throw new Error(`${(await response.json()).error}`);
+        }
+        return await response.json();
+    }
 }
 
 export const backendClient = new BackendClient();
@@ -473,6 +485,21 @@ export type WatchtowerStats = {
     scouting: number,
     unavailable: number,
     expanders: number,
+}
+
+export type DiscoveredCatalog = {
+    type: string,
+    id: string,
+    name: string,
+    url: string,
+    extraRequired?: string | null,
+}
+
+export type DiscoverCatalogsResponse = {
+    status: boolean,
+    error?: string,
+    addonName?: string | null,
+    catalogs: DiscoveredCatalog[],
 }
 
 export type SearchIndexersResponse = {

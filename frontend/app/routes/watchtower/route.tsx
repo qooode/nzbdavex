@@ -1,5 +1,5 @@
 import type { Route } from "./+types/route";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { Form, Button } from "react-bootstrap";
 import styles from "./route.module.css";
@@ -16,6 +16,10 @@ export async function action({ request }: Route.ActionArgs) {
     const fields: Record<string, string> = {};
     for (const [k, v] of form.entries()) fields[k] = String(v);
     try {
+        if (fields.action === "discover-catalogs") {
+            const discovered = await backendClient.discoverStremioCatalogs(fields.url ?? "");
+            return { ok: true as const, discovered };
+        }
         await backendClient.watchtowerMutate(fields);
         return { ok: true as const };
     } catch (e: any) {
@@ -26,7 +30,37 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Watchtower({ loaderData }: Route.ComponentProps) {
     const { enabled, sources, items, stats } = loaderData;
     const addFetcher = useFetcher<typeof action>();
+    const discoverFetcher = useFetcher<typeof action>();
+    const bulkFetcher = useFetcher<typeof action>();
     const revalidator = useRevalidator();
+
+    const discovered = discoverFetcher.data?.ok && "discovered" in discoverFetcher.data
+        ? discoverFetcher.data.discovered
+        : undefined;
+    const discoverError = discoverFetcher.data && discoverFetcher.data.ok === false
+        ? discoverFetcher.data.error : undefined;
+
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
+
+    useEffect(() => {
+        if (discovered) {
+            setSelected(new Set(discovered.catalogs.map(c => c.url)));
+            setDiscoveryDismissed(false);
+        }
+    }, [discovered]);
+
+    useEffect(() => {
+        if (bulkFetcher.state === "idle" && bulkFetcher.data?.ok) {
+            setDiscoveryDismissed(true);
+        }
+    }, [bulkFetcher.state, bulkFetcher.data]);
+
+    const chosenCatalogs = (discovered?.catalogs ?? []).filter(c => selected.has(c.url));
+    const sourcesJson = JSON.stringify(chosenCatalogs.map(c => ({
+        url: c.url,
+        name: discovered?.addonName ? `${discovered.addonName}: ${c.name}` : c.name,
+    })));
 
     const expanders = items.filter(it => it.state === "expander");
     const childrenByExpander = new Map<string, WatchtowerItem[]>();
@@ -97,6 +131,84 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     <Form.Control name="cap" type="number" min={0} placeholder="cap" className={styles.inputSm} title="Per-list active cap (0 = use default)" />
                     <Button type="submit" variant="primary" disabled={addFetcher.state !== "idle"}>Add list</Button>
                 </addFetcher.Form>
+
+                <div className={styles.discover}>
+                    <div className={styles.panelHint}>
+                        Or paste a Stremio addon's <code>manifest.json</code> URL to see its catalogs and pick the ones you want.
+                        Each catalog you add becomes its own list.
+                    </div>
+                    <discoverFetcher.Form method="post" className={styles.addRow}>
+                        <input type="hidden" name="action" value="discover-catalogs" />
+                        <Form.Control
+                            name="url"
+                            placeholder="https://addon.example.com/.../manifest.json"
+                            className={styles.inputWide}
+                        />
+                        <Button type="submit" variant="outline-secondary" disabled={discoverFetcher.state !== "idle"}>
+                            {discoverFetcher.state !== "idle" ? "Loading…" : "Discover catalogs"}
+                        </Button>
+                    </discoverFetcher.Form>
+
+                    {discoverError && <div className="alert alert-danger" role="alert">{discoverError}</div>}
+
+                    {discovered && !discoveryDismissed && (
+                        <div className={styles.discoverResult}>
+                            <div className={styles.discoverHead}>
+                                <div className={styles.discoverTitle}>
+                                    {discovered.addonName ? `${discovered.addonName} · ` : ""}
+                                    {discovered.catalogs.length} catalog{discovered.catalogs.length === 1 ? "" : "s"} found
+                                </div>
+                                <div className={styles.discoverActions}>
+                                    <button type="button" className={styles.linkBtn}
+                                        onClick={() => setSelected(new Set(discovered.catalogs.map(c => c.url)))}>select all</button>
+                                    <button type="button" className={styles.linkBtn}
+                                        onClick={() => setSelected(new Set())}>select none</button>
+                                    <button type="button" className={styles.linkBtn}
+                                        onClick={() => setDiscoveryDismissed(true)}>close</button>
+                                </div>
+                            </div>
+
+                            <div className={styles.catList}>
+                                {discovered.catalogs.map(cat => (
+                                    <label key={cat.url} className={styles.catRow}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.has(cat.url)}
+                                            onChange={(e) => setSelected(prev => {
+                                                const next = new Set(prev);
+                                                if (e.target.checked) next.add(cat.url); else next.delete(cat.url);
+                                                return next;
+                                            })}
+                                        />
+                                        <span className={styles.kind}>{cat.type}</span>
+                                        <span className={styles.catName}>{cat.name}</span>
+                                        {cat.extraRequired && (
+                                            <span className={styles.metaBad}
+                                                title={`This catalog requires "${cat.extraRequired}"; the basic endpoint may return nothing.`}>
+                                                needs {cat.extraRequired}
+                                            </span>
+                                        )}
+                                        <span className={`${styles.url} ${styles.catUrl}`} title={cat.url}>{cat.url}</span>
+                                    </label>
+                                ))}
+                            </div>
+
+                            <div className={styles.discoverFoot}>
+                                <bulkFetcher.Form method="post">
+                                    <input type="hidden" name="action" value="add-sources" />
+                                    <input type="hidden" name="sources" value={sourcesJson} readOnly />
+                                    <Button type="submit" variant="primary"
+                                        disabled={bulkFetcher.state !== "idle" || selected.size === 0}>
+                                        {bulkFetcher.state !== "idle" ? "Adding…" : `Add ${selected.size} selected`}
+                                    </Button>
+                                </bulkFetcher.Form>
+                                {bulkFetcher.data && bulkFetcher.data.ok === false && (
+                                    <span className={styles.metaBad}>{bulkFetcher.data.error}</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </section>
 
             <section className={styles.panel}>
