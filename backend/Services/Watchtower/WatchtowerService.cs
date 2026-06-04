@@ -167,8 +167,7 @@ public class WatchtowerService(
 
     private async Task ExpandDueExpandersAsync(CancellationToken ct)
     {
-        var scope = configManager.GetWatchtowerSeriesScope();
-        if (scope == "off") return;
+        var globalScope = configManager.GetWatchtowerSeriesScope();
 
         var now = Now();
         var interval = configManager.GetWatchtowerSyncIntervalSeconds();
@@ -181,16 +180,29 @@ public class WatchtowerService(
             .Take(ExpandsPerTick)
             .ToListAsync(ct).ConfigureAwait(false);
 
+        if (due.Count == 0) return;
+
+        var scopeBySource = await ctx.ListSources.AsNoTracking()
+            .ToDictionaryAsync(
+                s => s.Id.ToString(),
+                s => ConfigManager.NormalizeSeriesScope(s.SeriesScope) ?? globalScope,
+                ct)
+            .ConfigureAwait(false);
+
         foreach (var expander in due)
         {
             if (ct.IsCancellationRequested) break;
-            try
+            var scopes = EffectiveScopes(expander, scopeBySource, globalScope);
+            if (scopes.Count > 0)
             {
-                await ExpandOneAsync(ctx, expander, scope, now, ct).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                Log.Debug(e, "Watchtower: expand failed for {Key}", expander.Key);
+                try
+                {
+                    await ExpandOneAsync(ctx, expander, scopes, now, ct).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    Log.Debug(e, "Watchtower: expand failed for {Key}", expander.Key);
+                }
             }
             expander.NextCheckAtUnix = now + interval;
             expander.UpdatedAtUnix = now;
@@ -198,10 +210,23 @@ public class WatchtowerService(
         }
     }
 
-    private async Task ExpandOneAsync(DavDatabaseContext ctx, WantedItem expander, string scope, long now, CancellationToken ct)
+    private static List<string> EffectiveScopes(
+        WantedItem expander, IReadOnlyDictionary<string, string> scopeBySource, string globalScope)
+    {
+        var scopes = new List<string>();
+        foreach (var srcId in WtJson.ReadStrings(expander.Provenance))
+        {
+            var scope = scopeBySource.TryGetValue(srcId, out var s) ? s : globalScope;
+            if (scope == "off" || scopes.Contains(scope)) continue;
+            scopes.Add(scope);
+        }
+        return scopes;
+    }
+
+    private async Task ExpandOneAsync(DavDatabaseContext ctx, WantedItem expander, IReadOnlyList<string> scopes, long now, CancellationToken ct)
     {
         var tag = WtReconcile.ExpanderTag(expander.Key);
-        var desired = await BuildDesiredAsync(expander, scope, now, ct).ConfigureAwait(false);
+        var desired = await BuildDesiredAsync(expander, scopes, now, ct).ConfigureAwait(false);
         if (desired is null) return;
 
         var desiredKeys = desired.Keys.ToList();
@@ -262,17 +287,22 @@ public class WatchtowerService(
         }
 
         Log.Information("Watchtower: expanded {Key} -> {Count} row(s) (scope {Scope})",
-            expander.Key, desired.Count, scope);
+            expander.Key, desired.Count, string.Join("+", scopes));
     }
 
     private async Task<Dictionary<string, DesiredRow>?> BuildDesiredAsync(
-        WantedItem expander, string scope, long now, CancellationToken ct)
+        WantedItem expander, IReadOnlyList<string> scopes, long now, CancellationToken ct)
     {
         if (IsImdbId(expander.ContentId))
         {
             var episodes = await episodeEnumerator.EnumerateImdbAsync(expander.ContentId, ct).ConfigureAwait(false);
             if (episodes.Count == 0) return null;
-            return BuildDesiredRows(episodes, expander.Title, CanonicalImdb(expander.ContentId), scope, now);
+            var imdb = CanonicalImdb(expander.ContentId);
+            var desired = new Dictionary<string, DesiredRow>();
+            foreach (var scope in scopes)
+                foreach (var (k, v) in BuildDesiredRows(episodes, expander.Title, imdb, scope, now))
+                    desired[k] = v;
+            return desired;
         }
 
         var kitsuId = ParseKitsuId(expander.ContentId);
@@ -280,7 +310,11 @@ public class WatchtowerService(
         {
             var episodes = await episodeEnumerator.EnumerateKitsuAsync(kitsuId, ct).ConfigureAwait(false);
             if (episodes.Count == 0) return null;
-            return BuildAnimeDesiredRows(episodes, expander.Title, kitsuId, scope, now);
+            var desired = new Dictionary<string, DesiredRow>();
+            foreach (var scope in scopes)
+                foreach (var (k, v) in BuildAnimeDesiredRows(episodes, expander.Title, kitsuId, scope, now))
+                    desired[k] = v;
+            return desired;
         }
 
         return null;
@@ -297,7 +331,11 @@ public class WatchtowerService(
             ? configManager.GetWatchtowerSeriesRecentCount()
             : configManager.GetWatchtowerSeriesMaxEpisodes();
 
-        foreach (var ep in aired.Skip(Math.Max(0, aired.Count - count)))
+        var selected = scope == "first-season"
+            ? aired.Take(count)
+            : aired.Skip(Math.Max(0, aired.Count - count));
+
+        foreach (var ep in selected)
         {
             var contentId = $"kitsu:{kitsuId}:{ep.Number}";
             desired[$"series:{contentId}"] = new DesiredRow("series", contentId, AnimeTitle(seriesTitle, ep.Number));
@@ -336,9 +374,12 @@ public class WatchtowerService(
 
         var maxEpisodes = configManager.GetWatchtowerSeriesMaxEpisodes();
         var packsEnabled = configManager.IsWatchtowerSeasonPacksEnabled();
-        var seasons = scope == "all-aired"
-            ? aired.Select(e => e.Season).Distinct().OrderByDescending(s => s).ToList()
-            : new List<int> { aired.Max(e => e.Season) };
+        var seasons = scope switch
+        {
+            "all-aired" => aired.Select(e => e.Season).Distinct().OrderByDescending(s => s).ToList(),
+            "first-season" => new List<int> { aired.Min(e => e.Season) },
+            _ => new List<int> { aired.Max(e => e.Season) },
+        };
 
         var singleBudget = maxEpisodes;
         foreach (var season in seasons)

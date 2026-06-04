@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NzbWebDAV.Config;
 using NzbWebDAV.Database;
 using NzbWebDAV.Database.Models;
 using NzbWebDAV.Services;
@@ -33,6 +34,9 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
                 break;
             case "toggle-source":
                 await ToggleSourceAsync(form, ct).ConfigureAwait(false);
+                break;
+            case "set-source-scope":
+                await SetSourceScopeAsync(form, now, ct).ConfigureAwait(false);
                 break;
             case "add-item":
                 await AddItemAsync(form, now, ct).ConfigureAwait(false);
@@ -69,6 +73,7 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
             Url = kind == ListSource.KindManual ? null : url,
             Enabled = true,
             Cap = int.TryParse(form["cap"].ToString(), out var cap) ? Math.Max(0, cap) : 0,
+            SeriesScope = ConfigManager.NormalizeSeriesScope(form["seriesScope"].ToString()),
             CreatedAtUnix = now,
         });
     }
@@ -91,6 +96,8 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         if (inputs is null || inputs.Count == 0)
             throw new BadHttpRequestException("No catalogs were selected.");
 
+        var bulkScope = ConfigManager.NormalizeSeriesScope(form["seriesScope"].ToString());
+
         var existingUrls = (await dbClient.Ctx.ListSources
                 .Where(s => s.Url != null)
                 .Select(s => s.Url!)
@@ -111,6 +118,7 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
                 Url = url,
                 Enabled = true,
                 Cap = input.Cap is > 0 ? input.Cap.Value : 0,
+                SeriesScope = ConfigManager.NormalizeSeriesScope(input.SeriesScope) ?? bulkScope,
                 CreatedAtUnix = now,
             });
         }
@@ -152,6 +160,25 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         var source = await dbClient.Ctx.ListSources.FirstOrDefaultAsync(s => s.Id == id, ct).ConfigureAwait(false);
         if (source is null) return;
         source.Enabled = form["enabled"].ToString() == "true";
+    }
+
+    private async Task SetSourceScopeAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        if (!Guid.TryParse(form["id"].ToString(), out var id))
+            throw new BadHttpRequestException("Invalid source id.");
+        var source = await dbClient.Ctx.ListSources.FirstOrDefaultAsync(s => s.Id == id, ct).ConfigureAwait(false);
+        if (source is null) return;
+        source.SeriesScope = ConfigManager.NormalizeSeriesScope(form["seriesScope"].ToString());
+
+        var srcId = id.ToString();
+        var expanders = await dbClient.Ctx.WantedItems
+            .Where(w => w.State == WantedItem.StateExpander && w.Provenance.Contains(srcId))
+            .ToListAsync(ct).ConfigureAwait(false);
+        foreach (var expander in expanders)
+        {
+            expander.NextCheckAtUnix = now;
+            expander.UpdatedAtUnix = now;
+        }
     }
 
     private async Task AddItemAsync(IFormCollection form, long now, CancellationToken ct)
@@ -234,6 +261,7 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         [JsonPropertyName("url")] public string? Url { get; set; }
         [JsonPropertyName("name")] public string? Name { get; set; }
         [JsonPropertyName("cap")] public int? Cap { get; set; }
+        [JsonPropertyName("seriesScope")] public string? SeriesScope { get; set; }
     }
 }
 

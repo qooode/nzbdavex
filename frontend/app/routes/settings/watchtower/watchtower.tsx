@@ -85,14 +85,17 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
                     value={scope}
                     onChange={e => set("watchtower.series-scope", e.target.value)}>
                     <option value="latest-season">Latest season only</option>
+                    <option value="first-season">First season only</option>
                     <option value="all-aired">All aired seasons</option>
                     <option value="recent">Most recent episodes</option>
                     <option value="off">Off — don't expand series</option>
                 </Form.Select>
                 <p className={styles.hint}>
-                    <b>Latest season</b> warms only the newest season (default). <b>All aired</b>
+                    <b>Latest season</b> warms only the newest season (default). <b>First season</b>
+                    warms only season one — handy for watchlists you may start later. <b>All aired</b>
                     backfills every released season. <b>Recent</b> keeps just the last few episodes
                     across the whole series. <b>Off</b> stops series from expanding into episodes.
+                    Each list can override this on the Watchtower page.
                 </p>
             </Form.Group>
 
@@ -107,7 +110,7 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
                 </Form.Group>
             )}
 
-            {(scope === "latest-season" || scope === "all-aired") && (
+            {(scope === "latest-season" || scope === "first-season" || scope === "all-aired") && (
                 <>
                     <Form.Group className={styles.section}>
                         <Form.Check

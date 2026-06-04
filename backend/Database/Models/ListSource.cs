@@ -14,6 +14,8 @@ public class ListSource
 
     public int Cap { get; set; }
 
+    public string? SeriesScope { get; set; }
+
     public long CreatedAtUnix { get; set; }
     public long? LastSyncedAtUnix { get; set; }
     public string? LastSyncError { get; set; }

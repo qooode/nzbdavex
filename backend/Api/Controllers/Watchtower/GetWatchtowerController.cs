@@ -45,6 +45,7 @@ public class GetWatchtowerController(DavDatabaseClient dbClient, ConfigManager c
                 Url = s.Url,
                 Enabled = s.Enabled,
                 Cap = s.Cap,
+                SeriesScope = s.SeriesScope,
                 LastSyncedAtUnix = s.LastSyncedAtUnix,
                 LastSyncError = s.LastSyncError,
             }).ToList(),
@@ -100,6 +101,7 @@ public class GetWatchtowerResponse : BaseApiResponse
         [JsonPropertyName("url")] public string? Url { get; init; }
         [JsonPropertyName("enabled")] public required bool Enabled { get; init; }
         [JsonPropertyName("cap")] public required int Cap { get; init; }
+        [JsonPropertyName("seriesScope")] public string? SeriesScope { get; init; }
         [JsonPropertyName("lastSyncedAtUnix")] public long? LastSyncedAtUnix { get; init; }
         [JsonPropertyName("lastSyncError")] public string? LastSyncError { get; init; }
     }

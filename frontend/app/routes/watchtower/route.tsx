@@ -7,6 +7,15 @@ import { backendClient, type WatchtowerItem, type WatchtowerSource } from "~/cli
 
 const POLL_INTERVAL_MS = 5000;
 
+const SCOPE_OPTIONS: { value: string; label: string }[] = [
+    { value: "", label: "Default scope" },
+    { value: "latest-season", label: "Latest season" },
+    { value: "first-season", label: "First season" },
+    { value: "all-aired", label: "All aired seasons" },
+    { value: "recent", label: "Recent episodes" },
+    { value: "off", label: "Don't expand" },
+];
+
 export async function loader() {
     return await backendClient.getWatchtower();
 }
@@ -129,6 +138,9 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     <Form.Control name="name" placeholder="Name (optional)" className={styles.selectSm} />
                     <Form.Control name="url" placeholder="https://addon/catalog/movie/xyz.json" className={styles.inputWide} />
                     <Form.Control name="cap" type="number" min={0} placeholder="cap" className={styles.inputSm} title="Per-list active cap (0 = use default)" />
+                    <Form.Select name="seriesScope" defaultValue="" className={styles.selectSm} title="Series scope for this list">
+                        {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Form.Select>
                     <Button type="submit" variant="primary" disabled={addFetcher.state !== "idle"}>Add list</Button>
                 </addFetcher.Form>
 
@@ -194,9 +206,12 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                             </div>
 
                             <div className={styles.discoverFoot}>
-                                <bulkFetcher.Form method="post">
+                                <bulkFetcher.Form method="post" className={styles.addRow}>
                                     <input type="hidden" name="action" value="add-sources" />
                                     <input type="hidden" name="sources" value={sourcesJson} readOnly />
+                                    <Form.Select name="seriesScope" defaultValue="" className={styles.selectSm} title="Series scope for these lists">
+                                        {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </Form.Select>
                                     <Button type="submit" variant="primary"
                                         disabled={bulkFetcher.state !== "idle" || selected.size === 0}>
                                         {bulkFetcher.state !== "idle" ? "Adding…" : `Add ${selected.size} selected`}
@@ -259,6 +274,19 @@ function SourceRow({ source }: { source: WatchtowerSource }) {
                     : source.lastSyncedAtUnix
                         ? <span className={styles.metaOk}>synced {formatAge(source.lastSyncedAtUnix)}</span>
                         : <span className={styles.meta}>not synced yet</span>}
+                <fetcher.Form method="post">
+                    <input type="hidden" name="action" value="set-source-scope" />
+                    <input type="hidden" name="id" value={source.id} />
+                    <Form.Select
+                        name="seriesScope"
+                        defaultValue={source.seriesScope ?? ""}
+                        className={styles.selectSm}
+                        title="Series scope for this list"
+                        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                    >
+                        {SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Form.Select>
+                </fetcher.Form>
                 <fetcher.Form method="post">
                     <input type="hidden" name="action" value="toggle-source" />
                     <input type="hidden" name="id" value={source.id} />

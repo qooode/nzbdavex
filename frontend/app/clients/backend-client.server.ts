@@ -459,6 +459,7 @@ export type WatchtowerSource = {
     url?: string | null,
     enabled: boolean,
     cap: number,
+    seriesScope?: string | null,
     lastSyncedAtUnix?: number | null,
     lastSyncError?: string | null,
 }

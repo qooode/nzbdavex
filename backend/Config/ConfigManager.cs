@@ -485,12 +485,19 @@ public class ConfigManager
     public string GetWatchtowerSeriesScope()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.series-scope"));
-        return v switch
+        return NormalizeSeriesScope(v) ?? "latest-season";
+    }
+
+    public static string? NormalizeSeriesScope(string? value)
+    {
+        return StringUtil.EmptyToNull(value) switch
         {
+            "latest-season" => "latest-season",
+            "first-season" => "first-season",
             "all-aired" => "all-aired",
             "recent" => "recent",
             "off" => "off",
-            _ => "latest-season",
+            _ => null,
         };
     }
 
