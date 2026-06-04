@@ -96,4 +96,38 @@ public static class FilenameMatcher
         }
         return true;
     }
+
+    private static readonly HashSet<string> LeadingArticles =
+        new(StringComparer.Ordinal) { "the", "a", "an" };
+
+    private static readonly HashSet<string> TrailingQualifiers =
+        new(StringComparer.Ordinal) { "us", "uk", "au", "ca", "nz", "ie", "za" };
+
+    private static string[] StripLeadingArticle(string[] tokens) =>
+        tokens.Length > 1 && LeadingArticles.Contains(tokens[0]) ? tokens[1..] : tokens;
+
+    public static string NormalizeTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "";
+        var tokens = NonAlnumRegex.Replace(title.ToLowerInvariant(), " ")
+                                  .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', StripLeadingArticle(tokens));
+    }
+
+    public static bool TitleMatches(IReadOnlyCollection<string> expectedNormalized, string? releaseTitle)
+    {
+        if (expectedNormalized.Count == 0) return true;
+        var head = StripLeadingArticle(HeadTokens(releaseTitle));
+        if (head.Length == 0) return false;
+
+        if (expectedNormalized.Contains(string.Join(' ', head))) return true;
+
+        if (head.Length >= 2)
+        {
+            var last = head[^1];
+            if (TrailingQualifiers.Contains(last) || (last.Length == 4 && last.All(char.IsDigit)))
+                return expectedNormalized.Contains(string.Join(' ', head[..^1]));
+        }
+        return false;
+    }
 }

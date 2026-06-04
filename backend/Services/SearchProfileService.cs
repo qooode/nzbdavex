@@ -267,11 +267,11 @@ public class SearchProfileService(
 
     public async Task<SearchResult?> SearchByImdbAsync(
         string profileToken, string type, string id, CancellationToken ct,
-        string? clientQuery = null)
+        string? clientQuery = null, bool verifyIdentity = false)
     {
         var queryParams = await BuildImdbQueryAsync(type, id, ct).ConfigureAwait(false);
         if (queryParams is null) return Empty(profileToken, type, id);
-        return await SearchAsync(profileToken, type, id, queryParams, ct, clientQuery).ConfigureAwait(false);
+        return await SearchAsync(profileToken, type, id, queryParams, ct, clientQuery, verifyIdentity).ConfigureAwait(false);
     }
 
     public async Task<SearchResult?> SearchAsync(
@@ -280,7 +280,8 @@ public class SearchProfileService(
         string id,
         IReadOnlyDictionary<string, string> queryParams,
         CancellationToken ct,
-        string? clientQuery = null)
+        string? clientQuery = null,
+        bool verifyIdentity = false)
     {
         var profile = GetProfile(profileToken);
         if (profile is null) return null;
@@ -390,6 +391,27 @@ public class SearchProfileService(
                         : combined.OrderByDescending(x => x.Item.Size)
                                   .ThenByDescending(x => x.Item.Posted ?? DateTimeOffset.MinValue))
                     .ToList();
+            }
+        }
+
+        if (verifyIdentity && type is "series" or "season")
+        {
+            var expected = await BuildExpectedSeriesTitlesAsync(queryParams, ct).ConfigureAwait(false);
+            if (expected.Count > 0)
+            {
+                var before = deduped.Count;
+                deduped = deduped
+                    .Where(EpisodeOk)
+                    .Where(x => FilenameMatcher.TitleMatches(expected, x.Item.Title))
+                    .ToList();
+                if (deduped.Count != before)
+                    Log.Information(
+                        "Identity guard {Type}/{Id}: kept {Kept}/{Before} result(s) matching \"{Title}\"",
+                        type, id, deduped.Count, before, string.Join("\" / \"", expected));
+            }
+            else
+            {
+                Log.Debug("Identity guard {Type}/{Id}: no canonical title resolved; not filtering", type, id);
             }
         }
 
@@ -602,6 +624,21 @@ public class SearchProfileService(
         }
 
         return empty;
+    }
+
+    private async Task<HashSet<string>> BuildExpectedSeriesTitlesAsync(
+        IReadOnlyDictionary<string, string> queryParams, CancellationToken ct)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        var imdbDigits = queryParams.TryGetValue("imdbid", out var imdb) ? imdb : null;
+        int? tvdbId = null;
+        if (queryParams.TryGetValue("tvdbid", out var tvdbStr) && int.TryParse(tvdbStr, out var t)) tvdbId = t;
+        if (imdbDigits is null && tvdbId is null) return set;
+
+        var title = await titleResolver.GetTitleAsync("series", imdbDigits, tvdbId, ct).ConfigureAwait(false);
+        var norm = FilenameMatcher.NormalizeTitle(title);
+        if (norm.Length > 0) set.Add(norm);
+        return set;
     }
 
     private static SearchResult Empty(string profileToken, string type, string id) =>
