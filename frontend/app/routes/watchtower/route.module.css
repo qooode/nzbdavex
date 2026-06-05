@@ -112,12 +112,17 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 11px 4px;
+    padding: 11px 10px;
     border-top: 1px solid var(--border-subtle);
+    transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 
 .row:first-child {
     border-top: none;
+}
+
+.row:hover {
+    background: var(--bg-hover);
 }
 
 .dimmed {
@@ -340,9 +345,15 @@
 .group:first-child { border-top: none; }
 
 .children {
-    margin-left: 14px;
-    padding-left: 10px;
+    margin-left: 24px;
+    padding-left: 12px;
     border-left: 2px solid var(--border-subtle);
+    animation: reveal 160ms ease;
+}
+
+@keyframes reveal {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .toolbar {
@@ -379,18 +390,35 @@
 .selectionBar {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     flex-wrap: wrap;
-    padding: 8px 12px;
+    padding: 10px 14px;
     background: var(--bg-surface-2);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
 }
 
 .selCount {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 1px 9px;
+}
+
+.selLabel {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.selActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
 }
 
 .rowCheck {
@@ -399,24 +427,66 @@
     margin: 0;
 }
 
-.rowSelected { background: var(--bg-surface-2); }
-
-.disclosure {
-    appearance: none;
-    background: none;
-    border: none;
-    padding: 0;
-    width: 18px;
-    flex-shrink: 0;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: 11px;
-    line-height: 1;
-    transition: color 120ms ease;
+.rowSelected,
+.rowSelected:hover {
+    background: var(--bg-selected);
+    box-shadow: inset 2px 0 0 var(--text-primary);
 }
 
-.disclosure:hover { color: var(--text-primary); }
-.disclosure:disabled { cursor: default; opacity: 0.5; }
+.showHead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 10px;
+    min-width: 0;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+}
+
+.showHead:hover { background: var(--bg-hover); }
+.showHeadOpen { box-shadow: inset 0 -1px 0 var(--border-subtle); }
+.showHeadStatic { cursor: default; }
+.showHeadStatic:hover { background: transparent; }
+
+.showCheck {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.chev {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms ease;
+}
+
+.showHead:hover .chev { color: var(--text-secondary); }
+.chevOpen { transform: rotate(90deg); }
+
+.showInfo { flex: 1; min-width: 0; }
+
+.readyLine {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.meter {
+    width: 84px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--bg-surface-2);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.meterFill {
+    display: block;
+    height: 100%;
+    background: var(--success);
+    border-radius: 999px;
+    transition: width 240ms ease;
+}
 
 .rel {
     font-family: var(--font-mono);
@@ -431,6 +501,10 @@
         flex-direction: column;
         align-items: stretch;
         gap: 10px;
+    }
+
+    .showHead {
+        flex-wrap: wrap;
     }
 
     .rowMain {

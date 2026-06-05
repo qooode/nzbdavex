@@ -141,19 +141,30 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
     ];
     const sortedEntries = sortEntries(entries, sortKey);
 
-    const renderedLeafKeys = [
+    const allVisibleLeafKeys = [
         ...visibleOrphans.map(it => it.key),
-        ...visibleExpanders.filter(g => isShowOpen(g.ex.key)).flatMap(g => g.kids.map(k => k.key)),
+        ...visibleExpanders.flatMap(g => g.kids.map(k => k.key)),
     ];
-    const allVisibleSelected = renderedLeafKeys.length > 0 && renderedLeafKeys.every(k => selectedItems.has(k));
-    const someVisibleSelected = renderedLeafKeys.some(k => selectedItems.has(k));
+    const allVisibleSelected = allVisibleLeafKeys.length > 0 && allVisibleLeafKeys.every(k => selectedItems.has(k));
+    const someVisibleSelected = allVisibleLeafKeys.some(k => selectedItems.has(k));
     const toggleSelectAllVisible = () => setSelectedItems(prev => {
         const next = new Set(prev);
-        if (allVisibleSelected) renderedLeafKeys.forEach(k => next.delete(k));
-        else renderedLeafKeys.forEach(k => next.add(k));
+        if (allVisibleSelected) allVisibleLeafKeys.forEach(k => next.delete(k));
+        else allVisibleLeafKeys.forEach(k => next.add(k));
         return next;
     });
-    const selectedKeysValue = Array.from(selectedItems).join("\n");
+    const setKeysSelected = (keys: string[], select: boolean) => setSelectedItems(prev => {
+        const next = new Set(prev);
+        if (select) keys.forEach(k => next.add(k)); else keys.forEach(k => next.delete(k));
+        return next;
+    });
+    const fullySelectedExpanderKeys = expanders
+        .filter(ex => {
+            const kids = childrenByExpander.get(ex.key) ?? [];
+            return kids.length > 0 && kids.every(k => selectedItems.has(k.key));
+        })
+        .map(ex => ex.key);
+    const bulkKeysValue = [...selectedItems, ...fullySelectedExpanderKeys].join("\n");
     const unavailableKeys = items.filter(it => it.state === "unavailable").map(it => it.key);
 
     useEffect(() => {
@@ -334,9 +345,9 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                                 type="checkbox"
                                 checked={allVisibleSelected}
                                 onChange={toggleSelectAllVisible}
-                                disabled={renderedLeafKeys.length === 0}
+                                disabled={allVisibleLeafKeys.length === 0}
                             />
-                            select
+                            All
                         </label>
                         <Form.Control
                             value={query}
@@ -374,26 +385,29 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
 
                 {selectedItems.size > 0 && (
                     <div className={styles.selectionBar}>
-                        <span className={styles.selCount}>{selectedItems.size} selected</span>
-                        <bulkItemFetcher.Form method="post">
-                            <input type="hidden" name="action" value="bulk-recheck" />
-                            <input type="hidden" name="keys" value={selectedKeysValue} readOnly />
-                            <button type="submit" className={styles.linkBtn} disabled={bulkBusy}>
-                                {bulkBusy ? "working…" : "re-check"}
-                            </button>
-                        </bulkItemFetcher.Form>
-                        <bulkItemFetcher.Form
-                            method="post"
-                            onSubmit={e => {
-                                if (!window.confirm(`Remove ${selectedItems.size} item${selectedItems.size === 1 ? "" : "s"} from Watchtower?`))
-                                    e.preventDefault();
-                            }}
-                        >
-                            <input type="hidden" name="action" value="bulk-remove" />
-                            <input type="hidden" name="keys" value={selectedKeysValue} readOnly />
-                            <button type="submit" className={`${styles.linkBtn} ${styles.linkDanger}`} disabled={bulkBusy}>remove</button>
-                        </bulkItemFetcher.Form>
-                        <button type="button" className={styles.linkBtn} onClick={() => setSelectedItems(new Set())}>clear</button>
+                        <span className={styles.selCount}>{selectedItems.size}</span>
+                        <span className={styles.selLabel}>selected</span>
+                        <div className={styles.selActions}>
+                            <bulkItemFetcher.Form method="post">
+                                <input type="hidden" name="action" value="bulk-recheck" />
+                                <input type="hidden" name="keys" value={bulkKeysValue} readOnly />
+                                <Button type="submit" size="sm" variant="secondary" disabled={bulkBusy}>
+                                    {bulkBusy ? "Working…" : "Re-check"}
+                                </Button>
+                            </bulkItemFetcher.Form>
+                            <bulkItemFetcher.Form
+                                method="post"
+                                onSubmit={e => {
+                                    if (!window.confirm(`Remove ${selectedItems.size} item${selectedItems.size === 1 ? "" : "s"} from Watchtower?`))
+                                        e.preventDefault();
+                                }}
+                            >
+                                <input type="hidden" name="action" value="bulk-remove" />
+                                <input type="hidden" name="keys" value={bulkKeysValue} readOnly />
+                                <Button type="submit" size="sm" variant="danger" disabled={bulkBusy}>Remove</Button>
+                            </bulkItemFetcher.Form>
+                            <button type="button" className={styles.linkBtn} onClick={() => setSelectedItems(new Set())}>Clear</button>
+                        </div>
                     </div>
                 )}
 
@@ -416,6 +430,7 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                                     onToggle={() => toggleShow(e.ex.key)}
                                     selectedKeys={selectedItems}
                                     onToggleSelect={toggleItem}
+                                    onSelectMany={setKeysSelected}
                                   />
                                 : <ItemRow
                                     key={e.it.key}
@@ -539,7 +554,7 @@ function ItemRow({ item, selected, onToggleSelect }: {
     );
 }
 
-function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, selectedKeys, onToggleSelect }: {
+function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, selectedKeys, onToggleSelect, onSelectMany }: {
     expander: WatchtowerItem;
     episodes: WatchtowerItem[];
     expanded: boolean;
@@ -547,8 +562,10 @@ function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, sele
     onToggle: () => void;
     selectedKeys: Set<string>;
     onToggleSelect: (key: string) => void;
+    onSelectMany: (keys: string[], select: boolean) => void;
 }) {
     const fetcher = useFetcher<typeof action>();
+    const seriesCheckRef = useRef<HTMLInputElement>(null);
     const pending = fetcher.formData?.get("action");
     const removing = pending === "remove-item";
     const checking = pending === "recheck-item";
@@ -556,32 +573,59 @@ function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, sele
     const ready = episodes.filter(c => c.state === "ready").length;
     const unavailable = episodes.filter(c => c.state === "unavailable").length;
     const sorted = [...episodes].sort((a, b) => a.contentId.localeCompare(b.contentId, undefined, { numeric: true }));
+
+    const childKeys = episodes.map(c => c.key);
+    const allSel = childKeys.length > 0 && childKeys.every(k => selectedKeys.has(k));
+    const someSel = childKeys.some(k => selectedKeys.has(k));
+    const pct = episodes.length > 0 ? Math.round((ready / episodes.length) * 100) : 0;
+
+    useEffect(() => {
+        if (seriesCheckRef.current) seriesCheckRef.current.indeterminate = someSel && !allSel;
+    }, [someSel, allSel]);
+
     return (
         <div className={styles.group}>
-            <div className={`${styles.row} ${removing ? styles.dimmed : ""}`}>
-                <div className={styles.rowMain}>
-                    <button
-                        type="button"
-                        className={styles.disclosure}
-                        onClick={onToggle}
-                        disabled={!canToggle}
-                        aria-expanded={expanded}
-                        aria-label={expanded ? "Collapse" : "Expand"}
-                        title={canToggle ? (expanded ? "Collapse" : "Expand") : "Pinned open by filter"}
-                    >
-                        {expanded ? "▾" : "▸"}
-                    </button>
-                    <span className={`${styles.chip} ${styles.chipShow}`}>Show</span>
-                    <div className={styles.itemTitleWrap}>
-                        <div className={styles.itemTitle} title={expander.title}>{expander.title}</div>
-                        <div className={styles.itemSub}>
-                            <span className={styles.mono}>{expander.contentId}</span>
-                            <span>{episodes.length === 0 ? "expanding…" : `${episodes.length} tracked · ${ready} ready`}</span>
-                            {unavailable > 0 && <span className={styles.metaBad}>{unavailable} unavailable</span>}
-                        </div>
+            <div
+                className={`${styles.showHead} ${canToggle ? "" : styles.showHeadStatic} ${expanded ? styles.showHeadOpen : ""} ${removing ? styles.dimmed : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={() => canToggle && onToggle()}
+                onKeyDown={e => {
+                    if (canToggle && (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+                        e.preventDefault();
+                        onToggle();
+                    }
+                }}
+            >
+                <span className={styles.showCheck} onClick={e => e.stopPropagation()}>
+                    <input
+                        ref={seriesCheckRef}
+                        type="checkbox"
+                        checked={allSel}
+                        disabled={childKeys.length === 0}
+                        onChange={() => onSelectMany(childKeys, !allSel)}
+                        aria-label={`Select all of ${expander.title}`}
+                    />
+                </span>
+                <svg className={`${styles.chev} ${expanded ? styles.chevOpen : ""}`} width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className={`${styles.chip} ${styles.chipShow}`}>Show</span>
+                <div className={styles.showInfo}>
+                    <div className={styles.itemTitle} title={expander.title}>{expander.title}</div>
+                    <div className={styles.itemSub}>
+                        <span className={styles.mono}>{expander.contentId}</span>
+                        {episodes.length === 0
+                            ? <span>expanding…</span>
+                            : <span className={styles.readyLine}>
+                                <span className={styles.meter}><span className={styles.meterFill} style={{ width: `${pct}%` }} /></span>
+                                <span>{ready}/{episodes.length} ready</span>
+                              </span>}
+                        {unavailable > 0 && <span className={styles.metaBad}>{unavailable} unavailable</span>}
                     </div>
                 </div>
-                <div className={styles.rowActions}>
+                <div className={styles.rowActions} onClick={e => e.stopPropagation()}>
                     {error && <span className={styles.metaBad} title={error}>failed — retry</span>}
                     <fetcher.Form method="post">
                         <input type="hidden" name="action" value="recheck-item" />
