@@ -40,8 +40,9 @@ STAT. On a miss it falls back to exactly today's behavior.
 - **Whole series.** A list naming a show (a bare `series:tt…`) is expanded into its episodes via
   TVmaze (keyless) and tracked through the normal resolve + keep-fresh path. Scope is bounded by
   `series-scope`; only aired episodes are warmed. A finished season is warmed as a single season
-  pack (one grab covers the whole season, played per-episode); the still-airing season uses single
-  episodes. Toggle with `season-packs`.
+  bundle (one release covers the whole season, played per episode); the still-airing season uses
+  single episodes. Toggle with `season-bundles`. If a finished season has no healthy bundle,
+  `season-bundle-fallback` warms its individual episodes instead and parks the bundle.
 
 Adding a new source kind is one `switch` case in `ListSourceEnumerator`; the engine is unchanged.
 
@@ -75,7 +76,11 @@ Adding a new source kind is one `switch` case in `ListSourceEnumerator`; the eng
 | `series-scope` | `latest-season` | How much of a series to warm: `latest-season`, `all-aired`, `recent`, `off`. |
 | `series-max-episodes` | `50` | Cap on episodes warmed per series. |
 | `series-recent-count` | `3` | Episodes kept when `series-scope` is `recent`. |
-| `season-packs` | `true` | Warm one season pack for finished seasons instead of every episode. |
+| `season-bundles` | `true` | Warm one season bundle for finished seasons instead of every episode. |
+| `season-bundle-fallback` | `false` | When a finished season has no healthy bundle, warm its episodes instead and park the bundle. |
+| `season-bundle-fallback-scope` | `latest-season` | Which seasons fall back to episodes: `latest-season`, `recent`, `all`. |
+| `season-bundle-fallback-recent-count` | `2` | Seasons that fall back when scope is `recent`. |
+| `season-bundle-fallback-max-episodes` | `50` | Cap on episodes warmed when a season falls back. |
 
 ## Code map
 

@@ -25,7 +25,7 @@ public class WatchtowerService(
     private const int ResolvesPerTick = 3;
     private const int KeepFreshPerTick = 5;
     private const int ExpandsPerTick = 5;
-    private const long SeasonPackGraceSeconds = 14L * 86400L;
+    private const long SeasonBundleGraceSeconds = 14L * 86400L;
 
     private int _resolveDayKey = -1;
     private int _resolvesToday;
@@ -226,7 +226,7 @@ public class WatchtowerService(
     private async Task ExpandOneAsync(DavDatabaseContext ctx, WantedItem expander, IReadOnlyList<string> scopes, long now, CancellationToken ct)
     {
         var tag = WtReconcile.ExpanderTag(expander.Key);
-        var desired = await BuildDesiredAsync(expander, scopes, now, ct).ConfigureAwait(false);
+        var desired = await BuildDesiredAsync(ctx, expander, scopes, now, ct).ConfigureAwait(false);
         if (desired is null) return;
 
         var desiredKeys = desired.Keys.ToList();
@@ -291,16 +291,19 @@ public class WatchtowerService(
     }
 
     private async Task<Dictionary<string, DesiredRow>?> BuildDesiredAsync(
-        WantedItem expander, IReadOnlyList<string> scopes, long now, CancellationToken ct)
+        DavDatabaseContext ctx, WantedItem expander, IReadOnlyList<string> scopes, long now, CancellationToken ct)
     {
         if (IsImdbId(expander.ContentId))
         {
             var episodes = await episodeEnumerator.EnumerateImdbAsync(expander.ContentId, ct).ConfigureAwait(false);
             if (episodes.Count == 0) return null;
             var imdb = CanonicalImdb(expander.ContentId);
+            var parked = configManager.IsWatchtowerSeasonBundleFallbackEnabled()
+                ? await GetParkedFallbackSeasonsAsync(ctx, imdb, ct).ConfigureAwait(false)
+                : new HashSet<int>();
             var desired = new Dictionary<string, DesiredRow>();
             foreach (var scope in scopes)
-                foreach (var (k, v) in BuildDesiredRows(episodes, expander.Title, imdb, scope, now))
+                foreach (var (k, v) in BuildDesiredRows(episodes, expander.Title, imdb, scope, now, parked))
                     desired[k] = v;
             return desired;
         }
@@ -357,8 +360,27 @@ public class WatchtowerService(
         return string.IsNullOrEmpty(baseTitle) ? code : $"{baseTitle} {code}";
     }
 
+    private static async Task<HashSet<int>> GetParkedFallbackSeasonsAsync(
+        DavDatabaseContext ctx, string imdb, CancellationToken ct)
+    {
+        var prefix = imdb + ":";
+        var ids = await ctx.WantedItems.AsNoTracking()
+            .Where(w => w.Type == "season" && w.State == WantedItem.StateParked && w.ContentId.StartsWith(prefix))
+            .Select(w => w.ContentId)
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var seasons = new HashSet<int>();
+        foreach (var id in ids)
+        {
+            var parts = id.Split(':');
+            if (parts.Length >= 2 && int.TryParse(parts[^1], out var s)) seasons.Add(s);
+        }
+        return seasons;
+    }
+
     private Dictionary<string, DesiredRow> BuildDesiredRows(
-        IReadOnlyList<EpisodeEnumerator.Episode> episodes, string? seriesTitle, string imdb, string scope, long now)
+        IReadOnlyList<EpisodeEnumerator.Episode> episodes, string? seriesTitle, string imdb, string scope, long now,
+        IReadOnlySet<int> parkedFallbackSeasons)
     {
         var desired = new Dictionary<string, DesiredRow>();
         var aired = episodes.Where(e => e.AirDateUnix is null || e.AirDateUnix <= now).ToList();
@@ -373,7 +395,8 @@ public class WatchtowerService(
         }
 
         var maxEpisodes = configManager.GetWatchtowerSeriesMaxEpisodes();
-        var packsEnabled = configManager.IsWatchtowerSeasonPacksEnabled();
+        var bundlesEnabled = configManager.IsWatchtowerSeasonBundlesEnabled();
+        var fallbackCap = configManager.GetWatchtowerSeasonBundleFallbackMaxEpisodes();
         var seasons = scope switch
         {
             "all-aired" => aired.Select(e => e.Season).Distinct().OrderByDescending(s => s).ToList(),
@@ -384,9 +407,14 @@ public class WatchtowerService(
         var singleBudget = maxEpisodes;
         foreach (var season in seasons)
         {
-            if (packsEnabled && SeasonComplete(episodes, season, now))
+            if (bundlesEnabled && SeasonComplete(episodes, season, now))
             {
                 AddSeasonRow(desired, imdb, seriesTitle, season);
+                if (parkedFallbackSeasons.Contains(season))
+                {
+                    foreach (var ep in aired.Where(e => e.Season == season).OrderBy(e => e.Number).Take(fallbackCap))
+                        AddEpisodeRow(desired, imdb, seriesTitle, ep);
+                }
                 continue;
             }
             foreach (var ep in aired.Where(e => e.Season == season).OrderBy(e => e.Number))
@@ -420,12 +448,12 @@ public class WatchtowerService(
         if (eps.Any(e => e.AirDateUnix is { } a && a > now)) return false;
         var known = eps.Where(e => e.AirDateUnix is not null).Select(e => e.AirDateUnix!.Value).ToList();
         if (known.Count == 0) return true;
-        return now - known.Max() >= SeasonPackGraceSeconds;
+        return now - known.Max() >= SeasonBundleGraceSeconds;
     }
 
     private static string SeasonTitle(string? seriesTitle, int season)
     {
-        var code = $"S{season:D2} (season pack)";
+        var code = $"S{season:D2} (season bundle)";
         var baseTitle = seriesTitle?.Trim();
         return string.IsNullOrEmpty(baseTitle) ? code : $"{baseTitle} {code}";
     }
@@ -492,13 +520,13 @@ public class WatchtowerService(
         foreach (var item in due)
         {
             if (ct.IsCancellationRequested) break;
-            await ResolveOneAsync(profileToken, item, ct).ConfigureAwait(false);
+            await ResolveOneAsync(ctx, profileToken, item, ct).ConfigureAwait(false);
             _resolvesToday++;
             await ctx.SaveChangesAsync(ct).ConfigureAwait(false);
         }
     }
 
-    private async Task ResolveOneAsync(string profileToken, WantedItem item, CancellationToken ct)
+    private async Task ResolveOneAsync(DavDatabaseContext ctx, string profileToken, WantedItem item, CancellationToken ct)
     {
         var now = Now();
         if (WantedItem.IsBareSeries(item.Type, item.ContentId))
@@ -598,6 +626,8 @@ public class WatchtowerService(
         }
         else
         {
+            if (await TryParkForEpisodeFallbackAsync(ctx, item, candidates.Count, now, ct).ConfigureAwait(false))
+                return;
             item.State = WantedItem.StateUnavailable;
             item.Shortlist = "[]";
             item.WinnerNzb = null;
@@ -606,6 +636,69 @@ public class WatchtowerService(
             item.UpdatedAtUnix = now;
             Log.Debug("Watchtower: unavailable {Key} ({Reason})", item.Key, item.FailReason);
         }
+    }
+
+    private async Task<bool> TryParkForEpisodeFallbackAsync(
+        DavDatabaseContext ctx, WantedItem item, int candidateCount, long now, CancellationToken ct)
+    {
+        if (item.Type != "season") return false;
+        if (!configManager.IsWatchtowerSeasonBundleFallbackEnabled()) return false;
+
+        var parts = item.ContentId.Split(':');
+        if (parts.Length < 2) return false;
+        var imdb = parts[0];
+        if (!int.TryParse(parts[^1], out var season)) return false;
+        if (!await SeasonEligibleForFallbackAsync(ctx, imdb, season, ct).ConfigureAwait(false)) return false;
+
+        item.State = WantedItem.StateParked;
+        item.Shortlist = "[]";
+        item.WinnerNzb = null;
+        item.FailReason = candidateCount == 0
+            ? "No season bundle found, using episodes"
+            : "No healthy season bundle, using episodes";
+        item.NextCheckAtUnix = null;
+        item.UpdatedAtUnix = now;
+        await NudgeParentExpanderAsync(ctx, item, now, ct).ConfigureAwait(false);
+        Log.Information("Watchtower: parked season bundle {Key}; falling back to episodes", item.Key);
+        return true;
+    }
+
+    private async Task<bool> SeasonEligibleForFallbackAsync(
+        DavDatabaseContext ctx, string imdb, int season, CancellationToken ct)
+    {
+        var scope = configManager.GetWatchtowerSeasonBundleFallbackScope();
+        if (scope == "all") return true;
+
+        var prefix = imdb + ":";
+        var ids = await ctx.WantedItems.AsNoTracking()
+            .Where(w => w.Type == "season" && w.ContentId.StartsWith(prefix))
+            .Select(w => w.ContentId)
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var maxSeason = season;
+        foreach (var id in ids)
+        {
+            var parts = id.Split(':');
+            if (parts.Length >= 2 && int.TryParse(parts[^1], out var s) && s > maxSeason) maxSeason = s;
+        }
+
+        if (scope == "recent")
+            return season > maxSeason - configManager.GetWatchtowerSeasonBundleFallbackRecentCount();
+        return season == maxSeason;
+    }
+
+    private static async Task NudgeParentExpanderAsync(
+        DavDatabaseContext ctx, WantedItem item, long now, CancellationToken ct)
+    {
+        var parentKey = WtJson.ReadStrings(item.Provenance)
+            .FirstOrDefault(p => p.StartsWith("exp:", StringComparison.Ordinal));
+        if (parentKey is null) return;
+        parentKey = parentKey[4..];
+
+        var parent = await ctx.WantedItems.FirstOrDefaultAsync(w => w.Key == parentKey, ct).ConfigureAwait(false);
+        if (parent is null) return;
+        parent.NextCheckAtUnix = now;
+        parent.UpdatedAtUnix = now;
     }
 
     private async Task KeepFreshDueItemsAsync(CancellationToken ct)

@@ -515,10 +515,41 @@ public class ConfigManager
         return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 100) : 3;
     }
 
-    public bool IsWatchtowerSeasonPacksEnabled()
+    public bool IsWatchtowerSeasonBundlesEnabled()
     {
-        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-packs"));
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-bundles"));
         return v != null ? bool.Parse(v) : true;
+    }
+
+    public bool IsWatchtowerSeasonBundleFallbackEnabled()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-bundle-fallback"));
+        return v != null ? bool.Parse(v) : false;
+    }
+
+    public string GetWatchtowerSeasonBundleFallbackScope()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-bundle-fallback-scope"));
+        return v switch
+        {
+            "all" => "all",
+            "recent" => "recent",
+            _ => "latest-season",
+        };
+    }
+
+    public int GetWatchtowerSeasonBundleFallbackRecentCount()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-bundle-fallback-recent-count"));
+        if (v == null) return 2;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 100) : 2;
+    }
+
+    public int GetWatchtowerSeasonBundleFallbackMaxEpisodes()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.season-bundle-fallback-max-episodes"));
+        if (v == null) return 50;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 1000) : 50;
     }
 
     public bool IsPreviewPar2FilesEnabled()

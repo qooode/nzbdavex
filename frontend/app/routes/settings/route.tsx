@@ -88,9 +88,13 @@ const defaultConfig = {
     "watchtower.daily-resolve-budget": "60",
     "watchtower.sync-interval-seconds": "3600",
     "watchtower.series-scope": "latest-season",
-    "watchtower.season-packs": "true",
+    "watchtower.season-bundles": "true",
     "watchtower.series-max-episodes": "50",
     "watchtower.series-recent-count": "3",
+    "watchtower.season-bundle-fallback": "false",
+    "watchtower.season-bundle-fallback-scope": "latest-season",
+    "watchtower.season-bundle-fallback-recent-count": "2",
+    "watchtower.season-bundle-fallback-max-episodes": "50",
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

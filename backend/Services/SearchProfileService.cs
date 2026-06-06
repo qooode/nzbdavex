@@ -436,7 +436,7 @@ public class SearchProfileService(
             .ToList();
 
         if (configManager.IsWatchtowerEnabled())
-            await AddWarmedSeasonPackAsync(candidates, type, id, ct).ConfigureAwait(false);
+            await AddWarmedSeasonBundleAsync(candidates, type, id, ct).ConfigureAwait(false);
 
         if (candidates.Count == 0) return Empty(profileToken, type, id);
 
@@ -453,7 +453,7 @@ public class SearchProfileService(
         };
     }
 
-    private async Task AddWarmedSeasonPackAsync(
+    private async Task AddWarmedSeasonBundleAsync(
         List<NzbResolutionCache.Candidate> candidates, string type, string id, CancellationToken ct)
     {
         if (type != "series") return;
@@ -490,7 +490,7 @@ public class SearchProfileService(
         catch (OperationCanceledException) { throw; }
         catch (Exception e)
         {
-            Log.Debug(e, "Watchtower: season-pack candidate augment failed for {Id}", id);
+            Log.Debug(e, "Watchtower: season-bundle candidate augment failed for {Id}", id);
         }
     }
 

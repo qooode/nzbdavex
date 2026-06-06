@@ -250,6 +250,7 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
             throw new BadHttpRequestException("An item key is required.");
         var item = await dbClient.Ctx.WantedItems.FirstOrDefaultAsync(w => w.Key == key, ct).ConfigureAwait(false);
         if (item is null) return;
+        if (item.State == WantedItem.StateParked) item.State = WantedItem.StateScouting;
         item.NextCheckAtUnix = now;
         item.UpdatedAtUnix = now;
     }

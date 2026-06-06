@@ -13,7 +13,9 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
     const set = (key: string, value: string) => setNewConfig({ ...config, [key]: value });
     const enabled = (config["watchtower.enabled"] ?? "false") === "true";
     const scope = config["watchtower.series-scope"] ?? "latest-season";
-    const seasonPacks = (config["watchtower.season-packs"] ?? "true") === "true";
+    const seasonBundles = (config["watchtower.season-bundles"] ?? "true") === "true";
+    const bundleFallback = (config["watchtower.season-bundle-fallback"] ?? "false") === "true";
+    const bundleFallbackScope = config["watchtower.season-bundle-fallback-scope"] ?? "latest-season";
     const bytesToGb = (b?: string) => { const n = Number(b ?? ""); return n > 0 ? String(+(n / GB).toFixed(2)) : ""; };
     const setGb = (key: string, gb: string) => { const n = Number(gb); set(key, n > 0 ? String(Math.round(n * GB)) : "0"); };
 
@@ -115,17 +117,80 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
                     <Form.Group className={styles.section}>
                         <Form.Check
                             type="switch"
-                            id="watchtower-season-packs"
-                            label="Prefer season packs for finished seasons"
+                            id="watchtower-season-bundles"
+                            label="Prefer season bundles for finished seasons"
                             disabled={!enabled}
-                            checked={seasonPacks}
-                            onChange={e => set("watchtower.season-packs", String(e.target.checked))} />
+                            checked={seasonBundles}
+                            onChange={e => set("watchtower.season-bundles", String(e.target.checked))} />
                         <p className={styles.hint}>
-                            Warm one season pack per completed season — a single grab covers the whole
-                            season, played per-episode — instead of every episode. Still-airing seasons
-                            always use single episodes. Default on.
+                            Warm one season bundle per completed season, a single release that covers the
+                            whole season and plays per episode, instead of every episode. Still-airing
+                            seasons always use single episodes. Default on.
                         </p>
                     </Form.Group>
+
+                    {seasonBundles && (
+                        <Form.Group className={styles.section}>
+                            <Form.Check
+                                type="switch"
+                                id="watchtower-season-bundle-fallback"
+                                label="Fall back to episodes when no season bundle is found"
+                                disabled={!enabled}
+                                checked={bundleFallback}
+                                onChange={e => set("watchtower.season-bundle-fallback", String(e.target.checked))} />
+                            <p className={styles.hint}>
+                                When a finished season has no healthy bundle, warm its individual episodes
+                                instead so the season is still covered. The bundle is parked and stops being
+                                searched, so this will not keep hitting your indexers. Use "check now" on a
+                                parked pack to try for it again. Off by default.
+                            </p>
+                        </Form.Group>
+                    )}
+
+                    {seasonBundles && bundleFallback && (
+                        <>
+                            <Form.Group className={styles.section}>
+                                <Form.Label>Fallback scope</Form.Label>
+                                <Form.Select className={styles.input}
+                                    disabled={!enabled}
+                                    value={bundleFallbackScope}
+                                    onChange={e => set("watchtower.season-bundle-fallback-scope", e.target.value)}>
+                                    <option value="latest-season">Latest season only</option>
+                                    <option value="recent">Recent seasons</option>
+                                    <option value="all">All seasons</option>
+                                </Form.Select>
+                                <p className={styles.hint}>
+                                    Which finished seasons fall back to episodes when their bundle is missing.
+                                    <b> Latest season</b> covers only the newest season, the one most likely
+                                    being watched. <b>Recent seasons</b> covers the last few. <b>All seasons</b>
+                                    covers every season. Seasons left out stay a bundle-only search and keep retrying.
+                                </p>
+                            </Form.Group>
+
+                            {bundleFallbackScope === "recent" && (
+                                <Form.Group className={styles.section}>
+                                    <Form.Label>Recent season count</Form.Label>
+                                    <Form.Control className={styles.input} type="number" min={1} max={100}
+                                        disabled={!enabled}
+                                        value={config["watchtower.season-bundle-fallback-recent-count"] ?? "2"}
+                                        onChange={e => set("watchtower.season-bundle-fallback-recent-count", e.target.value)} />
+                                    <p className={styles.hint}>How many of the most recent seasons fall back to episodes. Default 2.</p>
+                                </Form.Group>
+                            )}
+
+                            <Form.Group className={styles.section}>
+                                <Form.Label>Max fallback episodes per season</Form.Label>
+                                <Form.Control className={styles.input} type="number" min={1} max={1000}
+                                    disabled={!enabled}
+                                    value={config["watchtower.season-bundle-fallback-max-episodes"] ?? "50"}
+                                    onChange={e => set("watchtower.season-bundle-fallback-max-episodes", e.target.value)} />
+                                <p className={styles.hint}>
+                                    Caps how many episodes are warmed when a season falls back, so a long
+                                    season does not fan out too far. Default 50.
+                                </p>
+                            </Form.Group>
+                        </>
+                    )}
 
                     <Form.Group className={styles.section}>
                         <Form.Label>Max episodes per series</Form.Label>
@@ -134,8 +199,8 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
                             value={config["watchtower.series-max-episodes"] ?? "50"}
                             onChange={e => set("watchtower.series-max-episodes", e.target.value)} />
                         <p className={styles.hint}>
-                            Caps how many individual episodes are warmed for seasons that aren't packed
-                            (such as the currently-airing one). Season packs don't count toward this. Default 50.
+                            Caps how many individual episodes are warmed for seasons that aren't bundled
+                            (such as the currently-airing one). Season bundles don't count toward this. Default 50.
                         </p>
                     </Form.Group>
                 </>
@@ -229,8 +294,12 @@ export function isWatchtowerSettingsUpdated(config: Record<string, string>, newC
         "watchtower.daily-resolve-budget",
         "watchtower.sync-interval-seconds",
         "watchtower.series-scope",
-        "watchtower.season-packs",
+        "watchtower.season-bundles",
         "watchtower.series-max-episodes",
         "watchtower.series-recent-count",
+        "watchtower.season-bundle-fallback",
+        "watchtower.season-bundle-fallback-scope",
+        "watchtower.season-bundle-fallback-recent-count",
+        "watchtower.season-bundle-fallback-max-episodes",
     ].some(k => config[k] !== newConfig[k]);
 }

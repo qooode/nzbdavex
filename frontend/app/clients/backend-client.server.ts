@@ -485,6 +485,7 @@ export type WatchtowerStats = {
     ready: number,
     scouting: number,
     unavailable: number,
+    parked: number,
     expanders: number,
 }
 

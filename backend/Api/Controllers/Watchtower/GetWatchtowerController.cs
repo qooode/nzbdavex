@@ -92,6 +92,7 @@ public class GetWatchtowerController(DavDatabaseClient dbClient, ConfigManager c
                 Ready = CountFor(WantedItem.StateReady),
                 Scouting = CountFor(WantedItem.StateScouting),
                 Unavailable = CountFor(WantedItem.StateUnavailable),
+                Parked = CountFor(WantedItem.StateParked),
                 Expanders = CountFor(WantedItem.StateExpander),
             },
         });
@@ -141,6 +142,7 @@ public class GetWatchtowerResponse : BaseApiResponse
         [JsonPropertyName("ready")] public required int Ready { get; init; }
         [JsonPropertyName("scouting")] public required int Scouting { get; init; }
         [JsonPropertyName("unavailable")] public required int Unavailable { get; init; }
+        [JsonPropertyName("parked")] public required int Parked { get; init; }
         [JsonPropertyName("expanders")] public required int Expanders { get; init; }
     }
 }

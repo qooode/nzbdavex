@@ -191,6 +191,9 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     <Stat label="Ready" value={stats.ready} tone="ok" active={stateFilter === "ready"} onClick={() => toggle("ready")} />
                     <Stat label="Scouting" value={stats.scouting} tone="warn" active={stateFilter === "scouting"} onClick={() => toggle("scouting")} />
                     <Stat label="Unavailable" value={stats.unavailable} tone="bad" active={stateFilter === "unavailable"} onClick={() => toggle("unavailable")} />
+                    {stats.parked > 0 && (
+                        <Stat label="Parked" value={stats.parked} active={stateFilter === "parked"} onClick={() => toggle("parked")} />
+                    )}
                     <Stat label="Shows" value={stats.expanders} active={stateFilter === "expander"} onClick={() => toggle("expander")} />
                     <Stat label="Total" value={stats.total} active={stateFilter === null} onClick={() => setStateFilter(null)} />
                 </div>
@@ -524,7 +527,7 @@ function ItemRow({ item, selected, onToggleSelect }: {
                 <div className={styles.itemTitleWrap}>
                     <div className={styles.itemTitle} title={item.title}>{item.title}</div>
                     <div className={styles.itemSub}>
-                        <span className={styles.kind}>{item.type === "season" ? "season pack" : item.type}</span>
+                        <span className={styles.kind}>{item.type === "season" ? "season bundle" : item.type}</span>
                         <span className={styles.mono}>{item.contentId}</span>
                         {item.provenanceCount > 1 && <span>on {item.provenanceCount} lists</span>}
                         {item.state === "ready" && <>
@@ -537,6 +540,7 @@ function ItemRow({ item, selected, onToggleSelect }: {
                             {item.failReason && <span>{item.failReason}</span>}
                             {item.nextCheckAtUnix && <span>retries {formatWhen(item.nextCheckAtUnix)}</span>}
                         </>}
+                        {item.state === "parked" && item.failReason && <span>{item.failReason}</span>}
                         {item.state === "scouting" && <span>searching…</span>}
                     </div>
                 </div>
@@ -574,14 +578,15 @@ function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, sele
     const removing = pending === "remove-item";
     const checking = pending === "recheck-item";
     const error = fetcher.data && fetcher.data.ok === false ? fetcher.data.error : null;
-    const ready = episodes.filter(c => c.state === "ready").length;
-    const unavailable = episodes.filter(c => c.state === "unavailable").length;
+    const countable = episodes.filter(c => c.state !== "parked");
+    const ready = countable.filter(c => c.state === "ready").length;
+    const unavailable = countable.filter(c => c.state === "unavailable").length;
     const sorted = [...episodes].sort((a, b) => a.contentId.localeCompare(b.contentId, undefined, { numeric: true }));
 
     const childKeys = episodes.map(c => c.key);
     const allSel = childKeys.length > 0 && childKeys.every(k => selectedKeys.has(k));
     const someSel = childKeys.some(k => selectedKeys.has(k));
-    const pct = episodes.length > 0 ? Math.round((ready / episodes.length) * 100) : 0;
+    const pct = countable.length > 0 ? Math.round((ready / countable.length) * 100) : 0;
 
     useEffect(() => {
         if (seriesCheckRef.current) seriesCheckRef.current.indeterminate = someSel && !allSel;
@@ -620,11 +625,11 @@ function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, sele
                     <div className={styles.itemTitle} title={expander.title}>{expander.title}</div>
                     <div className={styles.itemSub}>
                         <span className={styles.mono}>{expander.contentId}</span>
-                        {episodes.length === 0
+                        {countable.length === 0
                             ? <span>expanding…</span>
                             : <span className={styles.readyLine}>
                                 <span className={styles.meter}><span className={styles.meterFill} style={{ width: `${pct}%` }} /></span>
-                                <span>{ready}/{episodes.length} ready</span>
+                                <span>{ready}/{countable.length} ready</span>
                               </span>}
                         {unavailable > 0 && <span className={styles.metaBad}>{unavailable} unavailable</span>}
                     </div>
