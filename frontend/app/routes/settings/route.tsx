@@ -97,6 +97,7 @@ const defaultConfig = {
     "watchtower.season-bundle-fallback-recent-count": "2",
     "watchtower.season-bundle-fallback-max-episodes": "50",
     "warden.hide-dead": "true",
+    "warden.quorum": "2",
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

@@ -121,6 +121,8 @@ class Program
             .AddSingleton<NzbResolutionCache>()
             .AddSingleton<CandidateNegativeCache>()
             .AddSingleton<WardenStore>()
+            .AddSingleton<WardenRemoteSourceService>()
+            .AddHostedService(sp => sp.GetRequiredService<WardenRemoteSourceService>())
             .AddSingleton<PlaybackFastVerifier>()
             .AddSingleton<WatchdogLog>()
             .AddSingleton<PreflightCache>()

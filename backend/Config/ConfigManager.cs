@@ -50,6 +50,18 @@ public class ConfigManager
         return v is null || v == "true";
     }
 
+    public int GetWardenQuorum()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("warden.quorum"));
+        return v is not null && int.TryParse(v, out var n) && n >= 1 ? n : 2;
+    }
+
+    public int GetWardenMaxSourceEntries()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("warden.max-source-entries"));
+        return v is not null && int.TryParse(v, out var n) && n > 0 ? n : 2_000_000;
+    }
+
     public void UpdateValues(List<ConfigItem> configItems)
     {
         lock (_config)
