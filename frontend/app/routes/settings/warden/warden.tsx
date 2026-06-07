@@ -34,6 +34,19 @@ type Snapshot = {
 
 type Status = { text: string; variant: "success" | "danger" } | null;
 
+type BackupStatus = {
+    enabled: boolean;
+    repo: string;
+    path: string;
+    branch: string;
+    scope: "local" | "merged";
+    intervalHours: number;
+    hasToken: boolean;
+    lastAt: number;
+    lastStatus?: string | null;
+    rawUrl?: string | null;
+};
+
 const TRUST_HELP: Record<Trust, string> = {
     full: "Filters on its own",
     corroborate: "Filters only when enough sources agree",
@@ -85,6 +98,17 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
 
     const [confirm, setConfirm] = useState<{ kind: "remove" | "clear"; source: Source } | null>(null);
 
+    const [backup, setBackup] = useState<BackupStatus | null>(null);
+    const [showBackup, setShowBackup] = useState(false);
+    const [confirmRestore, setConfirmRestore] = useState(false);
+    const [bRepo, setBRepo] = useState("");
+    const [bToken, setBToken] = useState("");
+    const [bPath, setBPath] = useState("warden/warden.ndjson.gz");
+    const [bBranch, setBBranch] = useState("main");
+    const [bScope, setBScope] = useState<"local" | "merged">("local");
+    const [bInterval, setBInterval] = useState("24");
+    const [bEnabled, setBEnabled] = useState(false);
+
     const refresh = async () => {
         try {
             const res = await fetch("/api/warden-sources");
@@ -92,7 +116,14 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
         } catch { /* ignore */ }
     };
 
-    useEffect(() => { refresh(); }, []);
+    const loadBackup = async () => {
+        try {
+            const res = await fetch("/api/warden-backup");
+            if (res.ok) setBackup(await res.json());
+        } catch { }
+    };
+
+    useEffect(() => { refresh(); loadBackup(); }, []);
 
     useEffect(() => {
         if (message?.variant !== "success") return;
@@ -249,6 +280,72 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
         }
     };
 
+    const openBackupModal = () => {
+        setBRepo(backup?.repo ?? "");
+        setBPath(backup?.path || "warden/warden.ndjson.gz");
+        setBBranch(backup?.branch || "main");
+        setBScope(backup?.scope === "merged" ? "merged" : "local");
+        setBInterval(String(backup?.intervalHours ?? 24));
+        setBEnabled(backup?.enabled ?? false);
+        setBToken("");
+        setShowBackup(true);
+    };
+
+    const saveBackup = async () => {
+        setBusy("backup-save");
+        setMessage(null);
+        try {
+            const form = new FormData();
+            form.append("enabled", String(bEnabled));
+            form.append("repo", bRepo.trim());
+            form.append("path", bPath.trim());
+            form.append("branch", bBranch.trim());
+            form.append("scope", bScope);
+            form.append("intervalHours", bInterval);
+            if (bToken) form.append("token", bToken);
+            const data = await post("/api/warden-backup", form);
+            setBackup(data);
+            setMessage({ text: "Backup settings saved.", variant: "success" });
+            setShowBackup(false);
+            setBToken("");
+        } catch (err: any) {
+            setMessage({ text: err?.message || "Could not save backup settings.", variant: "danger" });
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const backupNow = async () => {
+        setBusy("backup-now");
+        setMessage(null);
+        try {
+            const data = await post("/api/warden-backup-now", new FormData());
+            const failed = (data.message ?? "").startsWith("error");
+            setMessage({ text: `Backup: ${data.message}`, variant: failed ? "danger" : "success" });
+            await loadBackup();
+        } catch (err: any) {
+            setMessage({ text: err?.message || "Backup failed.", variant: "danger" });
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const doRestore = async () => {
+        setConfirmRestore(false);
+        setBusy("backup-restore");
+        setMessage(null);
+        try {
+            const data = await post("/api/warden-backup-restore", new FormData());
+            setMessage({ text: data.message || "Restored.", variant: "success" });
+            await refresh();
+            await loadBackup();
+        } catch (err: any) {
+            setMessage({ text: err?.message || "Restore failed.", variant: "danger" });
+        } finally {
+            setBusy(null);
+        }
+    };
+
     const sources = snap?.sources ?? [];
 
     return (
@@ -395,6 +492,41 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                 </p>
             </div>
 
+            <div className={`${styles.section} ${styles.sourcesSection}`}>
+                <div className={styles.sectionHeader}>
+                    <div>
+                        <div className={styles.sectionTitle}>Backup to GitHub</div>
+                        <div className={styles.sectionDescription}>
+                            {backup === null
+                                ? "Loading…"
+                                : backup.repo
+                                    ? `${backup.enabled ? `Auto every ${backup.intervalHours}h` : "Manual only"} · ${backup.repo} · last backup ${ago(backup.lastAt)}${backup.lastStatus ? ` · ${backup.lastStatus}` : ""}`
+                                    : "Not configured. Push your list to your own GitHub repo as a backup."}
+                        </div>
+                    </div>
+                    <div className={styles.headerActions}>
+                        <Button variant="primary" size="sm" onClick={openBackupModal}>Settings</Button>
+                        <Button variant="outline-secondary" size="sm" disabled={!backup?.hasToken || busy !== null}
+                            onClick={backupNow}>
+                            {busy === "backup-now" ? <><Spinner as="span" animation="border" size="sm" /> Backing up…</> : "Back up now"}
+                        </Button>
+                        <Button variant="outline-secondary" size="sm" disabled={!backup?.hasToken || busy !== null}
+                            onClick={() => setConfirmRestore(true)}>
+                            Restore
+                        </Button>
+                    </div>
+                </div>
+
+                <p className={styles.hint}>
+                    A personal backup of your fingerprint list to a repo you own. Keep the repo{" "}
+                    <b>private</b> for a pure backup, or public to share. The file holds only fingerprint
+                    hashes — no credentials. Restore reuses the same repo and token, so private repos work too.
+                </p>
+
+                {backup?.repo && backup.rawUrl &&
+                    <div className={styles.url}>{backup.rawUrl}</div>}
+            </div>
+
             {message &&
                 <Alert variant={message.variant} dismissible onClose={() => setMessage(null)} className={styles.alert}>
                     {message.text}
@@ -516,6 +648,68 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     </Button>
                 </Modal.Footer>
             </Modal>
+
+            <Modal show={showBackup} onHide={() => setShowBackup(false)} centered>
+                <Modal.Header closeButton><Modal.Title>Backup to GitHub</Modal.Title></Modal.Header>
+                <Modal.Body>
+                    <Form.Group className={styles.modalGroup}>
+                        <Form.Label>Repository</Form.Label>
+                        <Form.Control placeholder="owner/repo" value={bRepo} onChange={e => setBRepo(e.target.value)} />
+                        <Form.Text muted>A repo you own. Private is recommended for a personal backup.</Form.Text>
+                    </Form.Group>
+                    <Form.Group className={styles.modalGroup}>
+                        <Form.Label>GitHub token</Form.Label>
+                        <Form.Control type="password" autoComplete="new-password"
+                            placeholder={backup?.hasToken ? "•••••••• (stored — leave blank to keep)" : "Fine-grained PAT"}
+                            value={bToken} onChange={e => setBToken(e.target.value)} />
+                        <Form.Text muted>
+                            Fine-grained PAT scoped to this one repo, Contents: read and write. Stored write-only —
+                            it is never shown again or returned by the API.
+                        </Form.Text>
+                    </Form.Group>
+                    <div className={styles.modalRow}>
+                        <Form.Group style={{ flex: 1 }}>
+                            <Form.Label>File path</Form.Label>
+                            <Form.Control value={bPath} onChange={e => setBPath(e.target.value)} placeholder="warden/warden.ndjson.gz" />
+                        </Form.Group>
+                        <Form.Group style={{ width: 130 }}>
+                            <Form.Label>Branch</Form.Label>
+                            <Form.Control value={bBranch} onChange={e => setBBranch(e.target.value)} placeholder="main" />
+                        </Form.Group>
+                    </div>
+                    <div className={styles.modalRow}>
+                        <Form.Group style={{ flex: 1 }}>
+                            <Form.Label>What to back up</Form.Label>
+                            <Form.Select value={bScope} onChange={e => setBScope(e.target.value as "local" | "merged")}>
+                                <option value="local">My list only</option>
+                                <option value="merged">Everything (all sources)</option>
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group style={{ width: 130 }}>
+                            <Form.Label>Every (h)</Form.Label>
+                            <Form.Control type="number" min={1} max={720} value={bInterval}
+                                onChange={e => setBInterval(e.target.value)} />
+                        </Form.Group>
+                    </div>
+                    <Form.Check type="switch" id="backup-enabled" label="Back up automatically on this schedule"
+                        checked={bEnabled} onChange={e => setBEnabled(e.target.checked)} style={{ marginTop: 12 }} />
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowBackup(false)}>Cancel</Button>
+                    <Button variant="primary" disabled={busy === "backup-save" || !bRepo.trim()} onClick={saveBackup}>
+                        {busy === "backup-save" ? <><Spinner as="span" animation="border" size="sm" /> Saving…</> : "Save"}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            <ConfirmModal
+                show={confirmRestore}
+                title="Restore from backup?"
+                message="This replaces your own list with the backup pulled from GitHub. Remote and imported sources are not affected."
+                cancelText="Cancel"
+                confirmText="Restore"
+                onCancel={() => setConfirmRestore(false)}
+                onConfirm={doRestore} />
 
             <ConfirmModal
                 show={confirm !== null}

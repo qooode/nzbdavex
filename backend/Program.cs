@@ -123,6 +123,8 @@ class Program
             .AddSingleton<WardenStore>()
             .AddSingleton<WardenRemoteSourceService>()
             .AddHostedService(sp => sp.GetRequiredService<WardenRemoteSourceService>())
+            .AddSingleton<WardenBackupService>()
+            .AddHostedService(sp => sp.GetRequiredService<WardenBackupService>())
             .AddSingleton<PlaybackFastVerifier>()
             .AddSingleton<WatchdogLog>()
             .AddSingleton<PreflightCache>()
