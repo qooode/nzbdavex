@@ -94,7 +94,7 @@ public partial class WardenBackupService : BackgroundService
         }
 
         if (bytes.Length > MaxPushBytes)
-            return Fail(now, $"error: backup is {FormatSize(bytes.Length)} — over GitHub's 100 MB file limit. Trim sources or use Releases mode.");
+            return Fail(now, $"error: backup {FormatSize(bytes.Length)} exceeds GitHub's 100 MB file limit. Trim sources or use Releases mode.");
 
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         var (existingSha, existingHash) = _store.GetBackupSyncState();

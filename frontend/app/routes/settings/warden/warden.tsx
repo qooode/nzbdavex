@@ -520,7 +520,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                 <p className={styles.hint}>
                     A personal backup of your fingerprint list to a repo you own. Keep the repo{" "}
                     <b>private</b> for a pure backup, or public to share. The file holds only fingerprint
-                    hashes — no credentials. Restore reuses the same repo and token, so private repos work too.
+                    hashes, no credentials. Restore reuses the same repo and token, so private repos work too.
                 </p>
 
                 {backup?.repo && backup.rawUrl &&
@@ -660,11 +660,11 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     <Form.Group className={styles.modalGroup}>
                         <Form.Label>GitHub token</Form.Label>
                         <Form.Control type="password" autoComplete="new-password"
-                            placeholder={backup?.hasToken ? "•••••••• (stored — leave blank to keep)" : "Fine-grained PAT"}
+                            placeholder={backup?.hasToken ? "•••••••• (stored, leave blank to keep)" : "Fine-grained PAT"}
                             value={bToken} onChange={e => setBToken(e.target.value)} />
                         <Form.Text muted>
-                            Fine-grained PAT scoped to this one repo, Contents: read and write. Stored write-only —
-                            it is never shown again or returned by the API.
+                            Fine-grained PAT scoped to this one repo, Contents: read and write. Stored
+                            write-only, never shown again or returned by the API.
                         </Form.Text>
                     </Form.Group>
                     <div className={styles.modalRow}>
