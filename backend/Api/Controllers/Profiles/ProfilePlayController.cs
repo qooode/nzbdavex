@@ -35,7 +35,8 @@ public class ProfilePlayController(
     PreflightCache preflightCache,
     PreflightSessionRegistry preflightSessions,
     VariantResolver variantResolver,
-    WatchtowerStore watchtowerStore
+    WatchtowerStore watchtowerStore,
+    WardenStore wardenStore
 ) : ControllerBase
 {
     private static readonly TimeSpan NzbFetchTimeout = TimeSpan.FromSeconds(8);
@@ -172,7 +173,8 @@ public class ProfilePlayController(
             {
                 var c = fallbackQueue[queueIndex];
                 queueIndex++;
-                if (negativeCache.IsFailed(c.NzbUrl))
+                if (negativeCache.IsFailed(c.NzbUrl)
+                    || wardenStore.IsDeadAnywhere(WardenFingerprint.Compute(c.Size, c.Poster, c.UsenetDate)))
                 {
                     // Surface this in the watchdog so users see every tried candidate,
                     // including those preflight (or a prior click) already poisoned —
@@ -331,6 +333,8 @@ public class ProfilePlayController(
                         break;
                     case PlaybackFastVerifier.Verdict.Dead:
                         negativeCache.MarkFailed(r.Candidate.NzbUrl);
+                        wardenStore.MarkDead(WardenFingerprint.Compute(r.Candidate.Size, r.Candidate.Poster, r.Candidate.UsenetDate),
+                            WardenFingerprint.Backbone(r.ResponderHost));
                         RecordAttempt(clickId, r.Candidate, contentType, requestedTitle,
                             rankIndex[r.Candidate.NzbUrl],
                             WatchdogEntry.Outcome.PreVerifyDead,

@@ -44,6 +44,12 @@ public class ConfigManager
         return rawValue == null ? default : JsonSerializer.Deserialize<T>(rawValue);
     }
 
+    public bool IsWardenHideDeadEnabled()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("warden.hide-dead"));
+        return v is null || v == "true";
+    }
+
     public void UpdateValues(List<ConfigItem> configItems)
     {
         lock (_config)

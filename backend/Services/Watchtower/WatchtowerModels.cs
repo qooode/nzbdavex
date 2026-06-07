@@ -11,6 +11,8 @@ public class WtPointer
     public string Title { get; set; } = null!;
     public long Size { get; set; }
     public int? Grabs { get; set; }
+    public string? Poster { get; set; }
+    public DateTimeOffset? UsenetDate { get; set; }
 
     public string Verdict { get; set; } = "unknown";
     public long? LastVerifiedAtUnix { get; set; }

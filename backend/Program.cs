@@ -120,6 +120,7 @@ class Program
             .AddSingleton<QueueManager>()
             .AddSingleton<NzbResolutionCache>()
             .AddSingleton<CandidateNegativeCache>()
+            .AddSingleton<WardenStore>()
             .AddSingleton<PlaybackFastVerifier>()
             .AddSingleton<WatchdogLog>()
             .AddSingleton<PreflightCache>()

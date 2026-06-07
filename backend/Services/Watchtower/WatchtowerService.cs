@@ -15,6 +15,7 @@ public class WatchtowerService(
     IndexerHitTracker hitTracker,
     NewznabRateLimiter rateLimiter,
     CandidateNegativeCache negativeCache,
+    WardenStore wardenStore,
     PreflightCache preflightCache,
     ListSourceEnumerator enumerator,
     EpisodeEnumerator episodeEnumerator
@@ -571,7 +572,8 @@ public class WatchtowerService(
         foreach (var c in ranked)
         {
             if (shortlist.Count >= depth || grabs >= grabCap || ct.IsCancellationRequested) break;
-            if (negativeCache.IsFailed(c.NzbUrl)) continue;
+            if (negativeCache.IsFailed(c.NzbUrl)
+                || wardenStore.IsDeadAnywhere(WardenFingerprint.Compute(c.Size, c.Poster, c.UsenetDate))) continue;
 
             var bytes = await FetchNzbBytesAsync(c, ct).ConfigureAwait(false);
             grabs++;
@@ -584,6 +586,8 @@ public class WatchtowerService(
             if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)
             {
                 negativeCache.MarkFailed(c.NzbUrl);
+                wardenStore.MarkDead(WardenFingerprint.Compute(c.Size, c.Poster, c.UsenetDate),
+                    WardenFingerprint.Backbone(outcome.ResponderHost));
                 continue;
             }
             if (outcome.Verdict == PlaybackFastVerifier.Verdict.Timeout) continue;
@@ -597,6 +601,8 @@ public class WatchtowerService(
                 Title = c.Title,
                 Size = c.Size,
                 Grabs = c.Grabs,
+                Poster = c.Poster,
+                UsenetDate = c.UsenetDate,
                 Verdict = "available",
                 LastVerifiedAtUnix = now,
             };
@@ -760,6 +766,8 @@ public class WatchtowerService(
         }
 
         negativeCache.MarkFailed(shortlist[0].NzbUrl);
+        wardenStore.MarkDead(WardenFingerprint.Compute(shortlist[0].Size, shortlist[0].Poster, shortlist[0].UsenetDate),
+            WardenFingerprint.Backbone(outcome.ResponderHost));
         shortlist.RemoveAt(0);
         await PromoteBackupAsync(item, shortlist, now, ct).ConfigureAwait(false);
     }
@@ -794,7 +802,12 @@ public class WatchtowerService(
                 return;
             }
 
-            if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead) negativeCache.MarkFailed(ptr.NzbUrl);
+            if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)
+            {
+                negativeCache.MarkFailed(ptr.NzbUrl);
+                wardenStore.MarkDead(WardenFingerprint.Compute(ptr.Size, ptr.Poster, ptr.UsenetDate),
+                    WardenFingerprint.Backbone(outcome.ResponderHost));
+            }
             shortlist.RemoveAt(0);
         }
 
@@ -852,6 +865,8 @@ public class WatchtowerService(
         Title = p.Title,
         Size = p.Size,
         Grabs = p.Grabs,
+        Poster = p.Poster,
+        UsenetDate = p.UsenetDate,
         ProxyUrl = p.ProxyUrl,
     };
 

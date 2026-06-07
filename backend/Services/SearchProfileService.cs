@@ -19,7 +19,8 @@ public class SearchProfileService(
     TmdbIdResolver tmdbResolver,
     ExternalIdResolver externalResolver,
     ImdbTitleResolver titleResolver,
-    PreflightOrchestrator preflightOrchestrator)
+    PreflightOrchestrator preflightOrchestrator,
+    WardenStore wardenStore)
 {
     public ProfileConfig.Profile? GetProfile(string token)
         => configManager.GetProfileConfig().Profiles.FirstOrDefault(x => x.Token == token);
@@ -425,6 +426,7 @@ public class SearchProfileService(
                 Size = x.Item.Size,
                 Posted = x.Item.Posted,
                 UsenetDate = x.Item.UsenetDate,
+                Poster = x.Item.Poster,
                 Grabs = x.Item.Grabs,
                 Password = x.Item.Password,
                 ProxyUrl = x.IndexerProxyUrl,
@@ -439,6 +441,14 @@ public class SearchProfileService(
             await AddWarmedSeasonBundleAsync(candidates, type, id, ct).ConfigureAwait(false);
 
         if (candidates.Count == 0) return Empty(profileToken, type, id);
+
+        if (configManager.IsWardenHideDeadEnabled())
+        {
+            var alive = candidates
+                .Where(c => !wardenStore.IsDeadAnywhere(WardenFingerprint.Compute(c.Size, c.Poster, c.UsenetDate)))
+                .ToList();
+            if (alive.Count > 0) candidates = alive;
+        }
 
         var tokens = cache.AddGroup(candidates, type, profileToken, id);
         preflightOrchestrator.Start(profileToken, type, id, candidates);
@@ -483,6 +493,8 @@ public class SearchProfileService(
                     Title = p.Title,
                     Size = p.Size,
                     Grabs = p.Grabs,
+                    Poster = p.Poster,
+                    UsenetDate = p.UsenetDate,
                     ProxyUrl = p.ProxyUrl,
                 });
             }

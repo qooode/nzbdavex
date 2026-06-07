@@ -13,6 +13,7 @@ import { isRepairsSettingsUpdated, RepairsSettings } from "./repairs/repairs";
 import { isWatchdogSettingsUpdated, WatchdogSettings } from "./watchdog/watchdog";
 import { isPreflightSettingsUpdated, PreflightSettings } from "./preflight/preflight";
 import { isWatchtowerSettingsUpdated, WatchtowerSettings } from "./watchtower/watchtower";
+import { isWardenSettingsUpdated, WardenSettings } from "./warden/warden";
 import { isRcloneSettingsUpdated, RcloneSettings } from "./rclone/rclone";
 import { useCallback, useState, type ReactNode } from "react";
 import { useBlocker } from "react-router";
@@ -95,6 +96,7 @@ const defaultConfig = {
     "watchtower.season-bundle-fallback-scope": "latest-season",
     "watchtower.season-bundle-fallback-recent-count": "2",
     "watchtower.season-bundle-fallback-max-episodes": "50",
+    "warden.hide-dead": "true",
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -145,7 +147,8 @@ function Body(props: BodyProps) {
     const isRcloneUpdated = isRcloneSettingsUpdated(config, newConfig);
     const isMaintenanceUpdated = isMaintenanceSettingsUpdated(config, newConfig);
     const isWatchtowerUpdated = isWatchtowerSettingsUpdated(config, newConfig);
-    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isProfilesUpdated || isRepairsUpdated || isWatchdogUpdated || isPreflightUpdated || isRcloneUpdated || isMaintenanceUpdated || isWatchtowerUpdated;
+    const isWardenUpdated = isWardenSettingsUpdated(config, newConfig);
+    const isUpdated = iseUsenetUpdated || isSabnzbdUpdated || isWebdavUpdated || isArrsUpdated || isIndexersUpdated || isProfilesUpdated || isRepairsUpdated || isWatchdogUpdated || isPreflightUpdated || isRcloneUpdated || isMaintenanceUpdated || isWatchtowerUpdated || isWardenUpdated;
     const isAdvancedUpdated = isWebdavUpdated || isSabnzbdUpdated || isArrsUpdated || isRepairsUpdated || isRcloneUpdated || isMaintenanceUpdated;
     const navigationBlocker = useNavigationBlocker(isUpdated);
 
@@ -155,6 +158,7 @@ function Body(props: BodyProps) {
     const watchdogTitle = tabTitle("Watchdog", isWatchdogUpdated);
     const preflightTitle = tabTitle("Preflight", isPreflightUpdated);
     const watchtowerTitle = tabTitle("Watchtower", isWatchtowerUpdated);
+    const wardenTitle = tabTitle("Warden", isWardenUpdated);
     const advancedTitle = tabTitle("Advanced", isAdvancedUpdated);
 
     const saveButtonLabel = isSaving ? "Saving..."
@@ -220,6 +224,9 @@ function Body(props: BodyProps) {
                 </Tab>
                 <Tab eventKey="watchtower" title={watchtowerTitle}>
                     <WatchtowerSettings config={newConfig} setNewConfig={setNewConfig} />
+                </Tab>
+                <Tab eventKey="warden" title={wardenTitle}>
+                    <WardenSettings config={newConfig} setNewConfig={setNewConfig} />
                 </Tab>
                 <Tab eventKey="advanced" title={advancedTitle}>
                     <div className={styles.advanced}>

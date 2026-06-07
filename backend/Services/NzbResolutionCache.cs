@@ -60,6 +60,7 @@ public class NzbResolutionCache
         public long Size { get; init; }
         public DateTimeOffset? Posted { get; init; }
         public DateTimeOffset? UsenetDate { get; init; }
+        public string? Poster { get; init; }
         public int? Grabs { get; init; }
         public int? Password { get; init; }
         public string? ProxyUrl { get; init; }

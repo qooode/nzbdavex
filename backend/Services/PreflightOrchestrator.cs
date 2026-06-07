@@ -17,7 +17,8 @@ public class PreflightOrchestrator(
     IndexerHitTracker hitTracker,
     LazyRarResolver lazyRarResolver,
     PreflightSessionRegistry sessionRegistry,
-    CandidateNegativeCache negativeCache)
+    CandidateNegativeCache negativeCache,
+    WardenStore wardenStore)
 {
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(8);
 
@@ -83,6 +84,9 @@ public class PreflightOrchestrator(
     {
         if (ct.IsCancellationRequested) return false;
 
+        var fp = WardenFingerprint.Compute(candidate.Size, candidate.Poster, candidate.UsenetDate);
+        if (wardenStore.IsDeadAnywhere(fp)) return false;
+
         if (indexers.TryGetValue(candidate.IndexerName, out var indexer))
         {
             var hitCheck = await hitTracker
@@ -117,6 +121,7 @@ public class PreflightOrchestrator(
         if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)
         {
             negativeCache.MarkFailed(candidate.NzbUrl);
+            wardenStore.MarkDead(fp, WardenFingerprint.Backbone(outcome.ResponderHost));
             return false;
         }
 
