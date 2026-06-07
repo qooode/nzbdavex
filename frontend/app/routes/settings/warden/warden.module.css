@@ -184,8 +184,13 @@
 }
 
 .trustSelect {
-    width: 150px;
+    width: 128px;
     flex-shrink: 0;
+    height: 28px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 12px;
+    background-position: right 8px center;
 }
 
 .dropHint {
