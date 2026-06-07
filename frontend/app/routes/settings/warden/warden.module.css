@@ -184,7 +184,8 @@
 }
 
 .trustSelect {
-    width: auto;
+    width: 150px;
+    flex-shrink: 0;
 }
 
 .dropHint {

@@ -37,7 +37,7 @@ type Status = { text: string; variant: "success" | "danger" } | null;
 const TRUST_HELP: Record<Trust, string> = {
     full: "Filters on its own",
     corroborate: "Filters only when enough sources agree",
-    observe: "Watch only — never filters",
+    observe: "Never filters (watch only)",
 };
 
 function ago(sec?: number) {
@@ -257,7 +257,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                 <div className={styles.sectionTitle}>Warden</div>
                 <div className={styles.sectionDescription}>
                     A portable filter list of dead-release fingerprints. Your own list fills in
-                    automatically and stays independent. You can also add remote lists from a URL —
+                    automatically and stays independent. You can also add remote lists from a URL;
                     they refresh on their own schedule, never touch your own list, and you decide how
                     much each one is trusted. Fingerprints are universal: identical on any provider,
                     indexer, or server, and free of credentials.
@@ -316,6 +316,12 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                         </Button>
                     </div>
                 </div>
+
+                <p className={styles.hint}>
+                    Each source has a trust level. <b>full</b> filters on its own;{" "}
+                    <b>corroborate</b> filters only when enough sources agree (the number above);{" "}
+                    <b>observe</b> keeps the list but never filters.
+                </p>
 
                 <div
                     className={`${styles.list} ${dragOver ? styles.listDrop : ""}`}
@@ -441,7 +447,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     <Form.Check type="radio" name="import-target" id="import-separate" label="Keep as a separate source (recommended)"
                         checked={importTarget === "separate"} onChange={() => setImportTarget("separate")} />
                     <div className={styles.choiceHint}>
-                        Stays isolated and reversible — one click to remove later. Best for lists from other people.
+                        Stays isolated and reversible: one click to remove later. Best for lists from other people.
                     </div>
                     <Form.Check type="radio" name="import-target" id="import-merge" label="Merge into my list"
                         checked={importTarget === "merge"} onChange={() => setImportTarget("merge")} />
@@ -455,13 +461,14 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                                 <Form.Label>Name</Form.Label>
                                 <Form.Control value={importName} onChange={e => setImportName(e.target.value)} placeholder="Imported list" />
                             </Form.Group>
-                            <Form.Group style={{ width: 160 }}>
+                            <Form.Group style={{ width: 180 }}>
                                 <Form.Label>Trust</Form.Label>
                                 <Form.Select value={importTrust} onChange={e => setImportTrust(e.target.value as Trust)}>
                                     <option value="corroborate">corroborate</option>
                                     <option value="full">full</option>
                                     <option value="observe">observe</option>
                                 </Form.Select>
+                                <Form.Text muted>{TRUST_HELP[importTrust]}</Form.Text>
                             </Form.Group>
                         </div>}
 
@@ -484,7 +491,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     <Form.Check type="radio" name="export-scope" id="export-local" label="My list only"
                         checked={exportScope === "local"} onChange={() => setExportScope("local")} />
                     <div className={styles.choiceHint}>
-                        Just your own verdicts — the clean file others can trust. Publish it and share the URL.
+                        Just your own verdicts: the clean file others can trust. Publish it and share the URL.
                     </div>
                     <Form.Check type="radio" name="export-scope" id="export-merged" label="Merged from selected sources"
                         checked={exportScope === "merged"} onChange={() => setExportScope("merged")} />
