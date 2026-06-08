@@ -22,6 +22,12 @@ public class SearchProfileService(
     PreflightOrchestrator preflightOrchestrator,
     WardenStore wardenStore)
 {
+    // Newznab caps a single request at 100 (the spec's common max), so to return more we page in
+    // 100-result chunks and advance the offset. A target of 100 (the default) is a single request —
+    // identical to the pre-pagination behavior. MaxSearchPages is a hard runaway guard.
+    private const int SearchPageSize = 100;
+    private const int MaxSearchPages = 50;
+
     public ProfileConfig.Profile? GetProfile(string token)
         => configManager.GetProfileConfig().Profiles.FirstOrDefault(x => x.Token == token);
 
@@ -60,7 +66,6 @@ public class SearchProfileService(
                 ["t"] = "movie",
                 ["imdbid"] = imdb,
                 ["cat"] = "2000",
-                ["limit"] = "100",
             };
         }
         if (type == "season")
@@ -75,7 +80,6 @@ public class SearchProfileService(
                 ["t"] = "tvsearch",
                 ["season"] = seasonNum.ToString(),
                 ["cat"] = "5000",
-                ["limit"] = "100",
             };
             var tvdb = await tvdbResolver.GetTvdbIdAsync(seasonImdb, ct).ConfigureAwait(false);
             if (tvdb.HasValue) dict["tvdbid"] = tvdb.Value.ToString();
@@ -99,7 +103,6 @@ public class SearchProfileService(
                 ["season"] = season.ToString(),
                 ["ep"] = episode.ToString(),
                 ["cat"] = "5000",
-                ["limit"] = "100",
             };
             var tvdb = await tvdbResolver.GetTvdbIdAsync(imdb, ct).ConfigureAwait(false);
             if (tvdb.HasValue) dict["tvdbid"] = tvdb.Value.ToString();
@@ -125,7 +128,6 @@ public class SearchProfileService(
                 ["t"] = "movie",
                 ["imdbid"] = imdb,
                 ["cat"] = "2000,2070",
-                ["limit"] = "100",
             };
         }
 
@@ -137,7 +139,6 @@ public class SearchProfileService(
                 ["t"] = "movie",
                 ["q"] = mapping.Title,
                 ["cat"] = "2000,2070",
-                ["limit"] = "100",
             };
         }
         return null;
@@ -175,7 +176,6 @@ public class SearchProfileService(
                     ["t"] = "movie",
                     ["imdbid"] = imdb,
                     ["cat"] = "2000,2070",
-                    ["limit"] = "100",
                 };
             }
             if (!string.IsNullOrWhiteSpace(mapping.Title))
@@ -185,7 +185,6 @@ public class SearchProfileService(
                     ["t"] = "movie",
                     ["q"] = mapping.Title,
                     ["cat"] = "2000,2070",
-                    ["limit"] = "100",
                 };
             }
             return null;
@@ -199,7 +198,6 @@ public class SearchProfileService(
             ["season"] = season.ToString(),
             ["ep"] = episode.Value.ToString(),
             ["cat"] = "5000,5070",
-            ["limit"] = "100",
         };
         if (mapping.TvdbId is { } tvdb) dict["tvdbid"] = tvdb.ToString();
         else if (mapping.ImdbId is { } imdb && StripImdbPrefix(imdb) is { } imdbDigits) dict["imdbid"] = imdbDigits;
@@ -245,7 +243,6 @@ public class SearchProfileService(
             ["season"] = season.ToString(),
             ["ep"] = episode.ToString(),
             ["cat"] = "5000",
-            ["limit"] = "100",
         };
     }
 
@@ -531,12 +528,43 @@ public class SearchProfileService(
                 var ua = string.IsNullOrWhiteSpace(x.UserAgent) ? configManager.GetUserAgent() : x.UserAgent;
                 var proxy = string.IsNullOrWhiteSpace(x.ProxyUrl) ? globalProxy : x.ProxyUrl;
                 var timeout = indexerConfig.GetEffectiveTimeoutSeconds(x);
-                await rateLimiter.WaitAsync(x.Name, x.MaxRequestsPerMinute, ct).ConfigureAwait(false);
+                var target = indexerConfig.GetEffectiveSearchResultLimit(x);
                 var client = new NewznabClient(x.Url, x.ApiKey, ua, proxy, timeout);
-                var indexerQuery = ApplyIndexerCategoryOverrides(queryParams, x);
-                var items = await client.QueryAsync(indexerQuery, ct).ConfigureAwait(false);
-                _ = hitTracker.RecordAsync(x.Name, IndexerApiHit.HitType.Search, CancellationToken.None);
-                var filtered = IndexerResultFilter.Apply(items, x.Filter, now);
+                var baseQuery = ApplyIndexerCategoryOverrides(queryParams, x);
+
+                // Page through the indexer (offset += 100) until we've gathered `target` results,
+                // the indexer runs dry (a short page), or we hit the safety cap. target == 100
+                // (the default) means a single request — identical to the pre-pagination behavior.
+                var collected = new List<NewznabClient.NewznabItem>();
+                var maxPages = Math.Min((target + SearchPageSize - 1) / SearchPageSize, MaxSearchPages);
+                for (var page = 0; page < maxPages; page++)
+                {
+                    // Re-check the hit budget before each extra page so paging never overruns a
+                    // configured API-hit limit (the first page was already cleared above).
+                    if (page > 0)
+                    {
+                        var pageCheck = await hitTracker
+                            .CheckAsync(x.Name, IndexerApiHit.HitType.Search, x.HitLimit, x.HitLimitResetTime, ct)
+                            .ConfigureAwait(false);
+                        if (pageCheck is { Allowed: false }) break;
+                    }
+
+                    await rateLimiter.WaitAsync(x.Name, x.MaxRequestsPerMinute, ct).ConfigureAwait(false);
+                    var pageQuery = new Dictionary<string, string>(baseQuery, StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["limit"] = SearchPageSize.ToString(),
+                        ["offset"] = (page * SearchPageSize).ToString(),
+                    };
+                    var pageItems = await client.QueryAsync(pageQuery, ct).ConfigureAwait(false);
+                    _ = hitTracker.RecordAsync(x.Name, IndexerApiHit.HitType.Search, CancellationToken.None);
+
+                    collected.AddRange(pageItems);
+                    if (pageItems.Count < SearchPageSize) break; // indexer has no more results
+                    if (collected.Count >= target) break;        // gathered enough
+                }
+
+                var limited = collected.Count > target ? collected.GetRange(0, target) : collected;
+                var filtered = IndexerResultFilter.Apply(limited, x.Filter, now);
                 return filtered.Select(i => new IndexerHit(x.Name, ua, proxy, i));
             }
             catch (Exception e)
@@ -596,7 +624,6 @@ public class SearchProfileService(
                     ["t"] = "movie",
                     ["q"] = title,
                     ["cat"] = "2000",
-                    ["limit"] = "100",
                 },
             };
         }
@@ -611,7 +638,6 @@ public class SearchProfileService(
                 ["t"] = "tvsearch",
                 ["q"] = title,
                 ["cat"] = "5000",
-                ["limit"] = "100",
             };
             if (originalParams.TryGetValue("season", out var s)) targeted["season"] = s;
             if (originalParams.TryGetValue("ep", out var e)) targeted["ep"] = e;
@@ -628,7 +654,6 @@ public class SearchProfileService(
                     ["t"] = "tvsearch",
                     ["q"] = title,
                     ["cat"] = "5000",
-                    ["limit"] = "100",
                 });
             }
 

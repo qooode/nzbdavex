@@ -38,7 +38,7 @@ public class NewznabAdapterController(
         var op = (type ?? "").ToLowerInvariant();
         if (op is "" or "caps")
         {
-            return Content(BuildCapsXml(), "application/xml", Encoding.UTF8);
+            return Content(BuildCapsXml(GetAdvertisedLimit()), "application/xml", Encoding.UTF8);
         }
 
         var ct = HttpContext.RequestAborted;
@@ -71,8 +71,19 @@ public class NewznabAdapterController(
         return Content(BuildFeedXml(profile, baseUrl, token, feedItems), "application/xml", Encoding.UTF8);
     }
 
-    private static string BuildCapsXml()
+    // Advertise the largest result count this instance can actually return (the global default,
+    // raised by any per-indexer override) so downstream clients don't cap themselves below it.
+    private int GetAdvertisedLimit()
     {
+        var cfg = configManager.GetIndexerConfig();
+        var globalLimit = cfg.SearchResultLimit is int g && g > 0 ? g : IndexerConfig.DefaultSearchResultLimit;
+        return cfg.Indexers.Aggregate(globalLimit, (max, i) =>
+            i.SearchResultLimit is int p && p > max ? p : max);
+    }
+
+    private static string BuildCapsXml(int limit)
+    {
+        var limitStr = limit.ToString();
         var caps = new XElement("caps",
             new XElement("server",
                 new XAttribute("appversion", ConfigManager.AppVersion),
@@ -80,8 +91,8 @@ public class NewznabAdapterController(
                 new XAttribute("title", "NzbDav Search Profile"),
                 new XAttribute("strapline", "Newznab adapter for a NzbDav Search Profile")),
             new XElement("limits",
-                new XAttribute("max", "100"),
-                new XAttribute("default", "100")),
+                new XAttribute("max", limitStr),
+                new XAttribute("default", limitStr)),
             new XElement("searching",
                 new XElement("search",
                     new XAttribute("available", "no"),

@@ -40,6 +40,7 @@ interface ConnectionDetails {
     EnableStrictMatching?: boolean;
     ProxyUrl?: string;
     TimeoutSeconds?: number;
+    SearchResultLimit?: number;
     HitLimit?: number;
     DownloadLimit?: number;
     HitLimitResetTime?: number;
@@ -52,12 +53,17 @@ interface ConnectionDetails {
 interface IndexerConfig {
     ProxyUrl?: string;
     TimeoutSeconds?: number;
+    SearchResultLimit?: number;
     Indexers: ConnectionDetails[];
 }
 
 // Hard fallback when neither the indexer nor the global override sets a timeout.
 // Mirrors IndexerConfig.DefaultTimeoutSeconds in the backend.
 const DEFAULT_TIMEOUT_SECONDS = 30;
+
+// Hard fallback for results gathered per indexer per search; above this the indexer is paged.
+// Mirrors IndexerConfig.DefaultSearchResultLimit in the backend.
+const DEFAULT_SEARCH_RESULT_LIMIT = 100;
 
 type PatternIssue = { line: number, pattern: string, error: string };
 
@@ -82,6 +88,7 @@ function parseConfig(raw: string): IndexerConfig {
         return {
             ProxyUrl: parsed.ProxyUrl ?? "",
             TimeoutSeconds: typeof parsed.TimeoutSeconds === "number" ? parsed.TimeoutSeconds : undefined,
+            SearchResultLimit: typeof parsed.SearchResultLimit === "number" ? parsed.SearchResultLimit : undefined,
             Indexers: parsed.Indexers ?? [],
         };
     } catch {
@@ -93,6 +100,7 @@ function serializeConfig(c: IndexerConfig): string {
     const out: IndexerConfig = { Indexers: c.Indexers };
     if (c.ProxyUrl && c.ProxyUrl.trim()) out.ProxyUrl = c.ProxyUrl.trim();
     if (typeof c.TimeoutSeconds === "number" && c.TimeoutSeconds > 0) out.TimeoutSeconds = c.TimeoutSeconds;
+    if (typeof c.SearchResultLimit === "number" && c.SearchResultLimit > 0) out.SearchResultLimit = c.SearchResultLimit;
     return JSON.stringify(out);
 }
 
@@ -138,7 +146,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
 
     const handleDelete = useCallback((index: number) => {
         const next: IndexerConfig = {
-            ProxyUrl: indexerConfig.ProxyUrl,
+            ...indexerConfig,
             Indexers: indexerConfig.Indexers.filter((_, i) => i !== index),
         };
         setNewConfig({ ...config, "indexers.instances": serializeConfig(next) });
@@ -146,7 +154,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
 
     const handleToggle = useCallback((index: number) => {
         const next: IndexerConfig = {
-            ProxyUrl: indexerConfig.ProxyUrl,
+            ...indexerConfig,
             Indexers: indexerConfig.Indexers.map((x, i) =>
                 i === index ? { ...x, Enabled: !x.Enabled } : x
             ),
@@ -160,7 +168,7 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
     }, []);
 
     const handleSave = useCallback((indexer: ConnectionDetails) => {
-        const next: IndexerConfig = { ProxyUrl: indexerConfig.ProxyUrl, Indexers: [...indexerConfig.Indexers] };
+        const next: IndexerConfig = { ...indexerConfig, Indexers: [...indexerConfig.Indexers] };
         if (editingIndex !== null) {
             next.Indexers[editingIndex] = indexer;
         } else {
@@ -182,6 +190,13 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
         setNewConfig({ ...config, "indexers.instances": serializeConfig(next) });
     }, [config, indexerConfig, setNewConfig]);
 
+    const handleSearchLimitChange = useCallback((value: string) => {
+        const trimmed = value.replace(/[^0-9]/g, "");
+        const n = trimmed === "" ? undefined : parseInt(trimmed, 10);
+        const next: IndexerConfig = { ...indexerConfig, SearchResultLimit: n && n > 0 ? n : undefined };
+        setNewConfig({ ...config, "indexers.instances": serializeConfig(next) });
+    }, [config, indexerConfig, setNewConfig]);
+
     const excludePatterns = config["search.exclude-patterns"] ?? "";
     const patternIssues = useMemo(() => validateExcludePatterns(excludePatterns), [excludePatterns]);
     const handleExcludePatternsChange = useCallback((value: string) => {
@@ -192,6 +207,9 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
     const proxyValid = isProxyUrlValid(proxyUrl);
     const globalTimeoutRaw = typeof indexerConfig.TimeoutSeconds === "number" && indexerConfig.TimeoutSeconds > 0
         ? indexerConfig.TimeoutSeconds.toString()
+        : "";
+    const globalSearchLimitRaw = typeof indexerConfig.SearchResultLimit === "number" && indexerConfig.SearchResultLimit > 0
+        ? indexerConfig.SearchResultLimit.toString()
         : "";
 
     return (
@@ -228,6 +246,19 @@ export function IndexersSettings({ config, setNewConfig }: IndexersSettingsProps
                             placeholder={DEFAULT_TIMEOUT_SECONDS.toString()}
                             value={globalTimeoutRaw}
                             onChange={e => handleTimeoutChange(e.target.value)}
+                        />
+                    </div>
+                    <div className={`${styles["form-group"]} ${styles["full-width"]}`}>
+                        <label htmlFor="indexers-default-search-limit" className={styles["form-label"]}>
+                            Search results per indexer <span className={styles["label-hint"]}>(blank = {DEFAULT_SEARCH_RESULT_LIMIT}; higher pages the indexer for more results, using more API calls)</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="indexers-default-search-limit"
+                            className={`${styles["form-input"]} ${!isTimeoutValid(globalSearchLimitRaw) ? styles.error : ""}`}
+                            placeholder={DEFAULT_SEARCH_RESULT_LIMIT.toString()}
+                            value={globalSearchLimitRaw}
+                            onChange={e => handleSearchLimitChange(e.target.value)}
                         />
                     </div>
 
@@ -320,6 +351,9 @@ function IndexerCard({ indexer, onEdit, onToggle, onDelete }: IndexerCardProps) 
     const proxy = indexer.ProxyUrl?.trim() ? indexer.ProxyUrl : "Default";
     const timeout = indexer.TimeoutSeconds && indexer.TimeoutSeconds > 0
         ? `${indexer.TimeoutSeconds}s`
+        : "Default";
+    const resultLimit = indexer.SearchResultLimit && indexer.SearchResultLimit > 0
+        ? indexer.SearchResultLimit.toString()
         : "Default";
     const formatLimit = (n: number | undefined, perDay: boolean) => {
         if (!n || n <= 0) return "Unlimited";
@@ -487,6 +521,23 @@ function IndexerCard({ indexer, onEdit, onToggle, onDelete }: IndexerCardProps) 
                         <div className={styles["indexer-detail-item"]}>
                             <div className={styles["indexer-detail-icon"]}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <line x1="8" y1="6" x2="21" y2="6" />
+                                    <line x1="8" y1="12" x2="21" y2="12" />
+                                    <line x1="8" y1="18" x2="21" y2="18" />
+                                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                                    <line x1="3" y1="18" x2="3.01" y2="18" />
+                                </svg>
+                            </div>
+                            <div className={styles["indexer-detail-content"]}>
+                                <span className={styles["indexer-detail-label"]}>Result limit</span>
+                                <span className={styles["indexer-detail-value"]}>{resultLimit}</span>
+                            </div>
+                        </div>
+
+                        <div className={styles["indexer-detail-item"]}>
+                            <div className={styles["indexer-detail-icon"]}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path d="M3 12h4l3-9 4 18 3-9h4" />
                                 </svg>
                             </div>
@@ -542,6 +593,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
     const [userAgent, setUserAgent] = useState("");
     const [proxyUrl, setProxyUrl] = useState("");
     const [timeoutSeconds, setTimeoutSeconds] = useState("");
+    const [searchResultLimit, setSearchResultLimit] = useState("");
     const [maxRpm, setMaxRpm] = useState("0");
     const [hitLimit, setHitLimit] = useState("");
     const [downloadLimit, setDownloadLimit] = useState("");
@@ -582,6 +634,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                     ? indexer.TimeoutSeconds.toString()
                     : ""
             );
+            setSearchResultLimit(indexer?.SearchResultLimit && indexer.SearchResultLimit > 0 ? indexer.SearchResultLimit.toString() : "");
             setMaxRpm((indexer?.MaxRequestsPerMinute ?? 0).toString());
             setHitLimit(indexer?.HitLimit && indexer.HitLimit > 0 ? indexer.HitLimit.toString() : "");
             setDownloadLimit(indexer?.DownloadLimit && indexer.DownloadLimit > 0 ? indexer.DownloadLimit.toString() : "");
@@ -640,6 +693,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
     const handleSave = useCallback(() => {
         const rpm = parseInt(maxRpm || "0", 10);
         const timeout = parseInt(timeoutSeconds || "0", 10);
+        const srl = parseInt(searchResultLimit || "0", 10);
         const hl = parseInt(hitLimit || "0", 10);
         const dl = parseInt(downloadLimit || "0", 10);
         const hr = hitResetTime.trim() === "" ? NaN : parseInt(hitResetTime, 10);
@@ -665,6 +719,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
             UserAgent: userAgent.trim() || undefined,
             ProxyUrl: proxyUrl.trim() || undefined,
             TimeoutSeconds: Number.isFinite(timeout) && timeout > 0 ? timeout : undefined,
+            SearchResultLimit: Number.isFinite(srl) && srl > 0 ? srl : undefined,
             MaxRequestsPerMinute: Number.isFinite(rpm) && rpm > 0 ? rpm : 0,
             HitLimit: Number.isFinite(hl) && hl > 0 ? hl : undefined,
             DownloadLimit: Number.isFinite(dl) && dl > 0 ? dl : undefined,
@@ -682,7 +737,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                 PreferDownloaded: filterPreferDownloaded,
             },
         });
-    }, [name, url, apiKey, userAgent, proxyUrl, timeoutSeconds, maxRpm, hitLimit, downloadLimit, hitResetTime, enabled, strict,
+    }, [name, url, apiKey, userAgent, proxyUrl, timeoutSeconds, searchResultLimit, maxRpm, hitLimit, downloadLimit, hitResetTime, enabled, strict,
         extraMovieCategories, extraTvCategories, ignoreCategoryFilter,
         filterEnabled, filterSkipPassworded, filterMinGrabs, filterGrabsGraceHours,
         filterMaxAgeDaysWithoutGrabs, filterPreferDownloaded, onSave]);
@@ -707,6 +762,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
         return Number.isInteger(n) && n >= 0 && raw.trim() === n.toString();
     };
     const isHitLimitValid = isNonNegIntOrBlank(hitLimit);
+    const isSearchResultLimitValid = isNonNegIntOrBlank(searchResultLimit);
     const isDownloadLimitValid = isNonNegIntOrBlank(downloadLimit);
     const isHitResetValid = (() => {
         if (!hitResetTime.trim()) return true;
@@ -717,7 +773,7 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
     const isExtraTvCategoriesValid = isCategoryListValid(extraTvCategories);
     const isFormValid = name.trim() !== "" && isUrlValid && apiKey.trim() !== ""
         && isRpmValid && isProxyValid && isTimeoutFieldValid
-        && isHitLimitValid && isDownloadLimitValid && isHitResetValid
+        && isHitLimitValid && isSearchResultLimitValid && isDownloadLimitValid && isHitResetValid
         && isExtraMovieCategoriesValid && isExtraTvCategoriesValid;
 
     if (!show) return null;
@@ -822,6 +878,20 @@ function IndexerModal({ show, indexer, onClose, onSave }: IndexerModalProps) {
                                 placeholder="Use global default"
                                 value={timeoutSeconds}
                                 onChange={e => setTimeoutSeconds(e.target.value.replace(/[^0-9]/g, ""))}
+                            />
+                        </div>
+
+                        <div className={styles["form-group"]}>
+                            <label htmlFor="indexer-search-limit" className={styles["form-label"]}>
+                                Search result limit <span className={styles["label-hint"]}>(blank = use global default)</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="indexer-search-limit"
+                                className={`${styles["form-input"]} ${!isSearchResultLimitValid ? styles.error : ""}`}
+                                placeholder="Use global default"
+                                value={searchResultLimit}
+                                onChange={e => setSearchResultLimit(e.target.value.replace(/[^0-9]/g, ""))}
                             />
                         </div>
 
@@ -1125,12 +1195,14 @@ export function isIndexersSettingsValid(newConfig: Record<string, string>) {
         const c = parseConfig(newConfig["indexers.instances"]);
         if (!isProxyUrlValid(c.ProxyUrl ?? "")) return false;
         if (c.TimeoutSeconds !== undefined && (!Number.isInteger(c.TimeoutSeconds) || c.TimeoutSeconds <= 0)) return false;
+        if (c.SearchResultLimit !== undefined && (!Number.isInteger(c.SearchResultLimit) || c.SearchResultLimit <= 0)) return false;
         for (const i of c.Indexers) {
             if (!i.Name.trim()) return false;
             if (!i.ApiKey.trim()) return false;
             try { new URL(i.Url); } catch { return false; }
             if (!isProxyUrlValid(i.ProxyUrl ?? "")) return false;
             if (i.TimeoutSeconds !== undefined && (!Number.isInteger(i.TimeoutSeconds) || i.TimeoutSeconds <= 0)) return false;
+            if (i.SearchResultLimit !== undefined && (!Number.isInteger(i.SearchResultLimit) || i.SearchResultLimit <= 0)) return false;
             if (i.HitLimit !== undefined && (!Number.isInteger(i.HitLimit) || i.HitLimit < 0)) return false;
             if (i.DownloadLimit !== undefined && (!Number.isInteger(i.DownloadLimit) || i.DownloadLimit < 0)) return false;
             if (i.HitLimitResetTime !== undefined
