@@ -1,11 +1,12 @@
 import type { Route } from "./+types/route";
 import { useEffect, useRef, useState } from "react";
-import { useFetcher, useRevalidator } from "react-router";
+import { useFetcher, useSearchParams, useLocation } from "react-router";
 import { Form, Button } from "react-bootstrap";
 import styles from "./route.module.css";
-import { backendClient, type WatchtowerItem, type WatchtowerSource } from "~/clients/backend-client.server";
+import { backendClient, type WatchtowerData, type WatchtowerItem, type WatchtowerSource } from "~/clients/backend-client.server";
 
 const POLL_INTERVAL_MS = 5000;
+const PAGE_SIZE = 100;
 
 const SCOPE_OPTIONS: { value: string; label: string }[] = [
     { value: "", label: "Default scope" },
@@ -16,8 +17,16 @@ const SCOPE_OPTIONS: { value: string; label: string }[] = [
     { value: "off", label: "Don't expand" },
 ];
 
-export async function loader() {
-    return await backendClient.getWatchtower();
+export async function loader({ request }: Route.LoaderArgs) {
+    const sp = new URL(request.url).searchParams;
+    return await backendClient.getWatchtower({
+        state: sp.get("state") ?? undefined,
+        q: sp.get("q")?.trim() || undefined,
+        sort: sp.get("sort") ?? undefined,
+        offset: Number(sp.get("offset")) || 0,
+        limit: Number(sp.get("limit")) || PAGE_SIZE,
+        statsOnly: sp.get("statsOnly") === "1",
+    });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -30,11 +39,8 @@ export async function action({ request }: Route.ActionArgs) {
             return { ok: true as const, discovered };
         }
         if (fields.action === "bulk-recheck" || fields.action === "bulk-remove") {
-            const keys = (fields.keys ?? "").split("\n").map(s => s.trim()).filter(Boolean);
-            const sub = fields.action === "bulk-recheck" ? "recheck-item" : "remove-item";
-            for (const key of keys) {
-                await backendClient.watchtowerMutate({ action: sub, key });
-            }
+            const sub = fields.action === "bulk-recheck" ? "recheck-items" : "remove-items";
+            await backendClient.watchtowerMutate({ action: sub, keys: fields.keys ?? "" });
             return { ok: true as const };
         }
         await backendClient.watchtowerMutate(fields);
@@ -45,11 +51,20 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Watchtower({ loaderData }: Route.ComponentProps) {
-    const { enabled, sources, items, stats } = loaderData;
     const addFetcher = useFetcher<typeof action>();
     const discoverFetcher = useFetcher<typeof action>();
     const bulkFetcher = useFetcher<typeof action>();
-    const revalidator = useRevalidator();
+    const bulkItemFetcher = useFetcher<typeof action>();
+    const filterFetcher = useFetcher<typeof action>();
+    const moreFetcher = useFetcher<WatchtowerData>();
+    const statsFetcher = useFetcher<WatchtowerData>();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    const stateFilter = searchParams.get("state");
+    const urlQuery = searchParams.get("q") ?? "";
+    const sortKey = searchParams.get("sort") ?? "default";
+    const filtering = stateFilter !== null || urlQuery !== "";
 
     const discovered = discoverFetcher.data?.ok && "discovered" in discoverFetcher.data
         ? discoverFetcher.data.discovered
@@ -59,16 +74,20 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
 
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
-    const [query, setQuery] = useState("");
-    const [stateFilter, setStateFilter] = useState<string | null>(null);
-    const toggle = (s: string) => setStateFilter(cur => (cur === s ? null : s));
 
-    const bulkItemFetcher = useFetcher<typeof action>();
-    const bulkBusy = bulkItemFetcher.state !== "idle";
+    const [items, setItems] = useState<WatchtowerItem[]>(loaderData.items);
+    const [total, setTotal] = useState(loaderData.total);
+    const [hasMore, setHasMore] = useState(loaderData.hasMore);
+    const [stats, setStats] = useState(loaderData.stats);
+    const [sources, setSources] = useState(loaderData.sources);
+    const [enabled, setEnabled] = useState(loaderData.enabled);
+
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-    const [sortKey, setSortKey] = useState("default");
     const [expandedShows, setExpandedShows] = useState<Set<string>>(new Set());
     const selectAllRef = useRef<HTMLInputElement>(null);
+    const sentinelRef = useRef<HTMLDivElement>(null);
+    const lastOffsetRef = useRef(-1);
+
     const toggleItem = (key: string) => setSelectedItems(prev => {
         const next = new Set(prev);
         if (next.has(key)) next.delete(key); else next.add(key);
@@ -79,6 +98,100 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
         if (next.has(key)) next.delete(key); else next.add(key);
         return next;
     });
+
+    useEffect(() => {
+        setItems(loaderData.items);
+        setTotal(loaderData.total);
+        setHasMore(loaderData.hasMore);
+        setStats(loaderData.stats);
+        setSources(loaderData.sources);
+        setEnabled(loaderData.enabled);
+        setSelectedItems(new Set());
+        lastOffsetRef.current = -1;
+    }, [loaderData]);
+
+    useEffect(() => {
+        if (moreFetcher.state === "idle" && moreFetcher.data) {
+            const data = moreFetcher.data;
+            setItems(prev => {
+                const seen = new Set(prev.map(i => i.key));
+                return [...prev, ...data.items.filter(i => !seen.has(i.key))];
+            });
+            setTotal(data.total);
+            setHasMore(data.hasMore);
+        }
+    }, [moreFetcher.state, moreFetcher.data]);
+
+    useEffect(() => {
+        if (statsFetcher.state === "idle" && statsFetcher.data) {
+            setStats(statsFetcher.data.stats);
+            setSources(statsFetcher.data.sources);
+            setEnabled(statsFetcher.data.enabled);
+        }
+    }, [statsFetcher.state, statsFetcher.data]);
+
+    const loadMoreRef = useRef<() => void>(() => {});
+    loadMoreRef.current = () => {
+        if (!hasMore || moreFetcher.state !== "idle") return;
+        const offset = items.length;
+        if (offset === lastOffsetRef.current) return;
+        lastOffsetRef.current = offset;
+        const sp = new URLSearchParams();
+        if (stateFilter) sp.set("state", stateFilter);
+        if (urlQuery) sp.set("q", urlQuery);
+        if (sortKey !== "default") sp.set("sort", sortKey);
+        sp.set("offset", String(offset));
+        moreFetcher.load(`${location.pathname}?${sp.toString()}`);
+    };
+    const pollRef = useRef<() => void>(() => {});
+    pollRef.current = () => {
+        if (statsFetcher.state === "idle") statsFetcher.load(`${location.pathname}?statsOnly=1`);
+    };
+
+    useEffect(() => {
+        const el = sentinelRef.current;
+        if (!el) return;
+        const io = new IntersectionObserver(es => { if (es[0].isIntersecting) loadMoreRef.current(); }, { rootMargin: "600px" });
+        io.observe(el);
+        return () => io.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (moreFetcher.state !== "idle" || !hasMore) return;
+        const el = sentinelRef.current;
+        if (el && el.getBoundingClientRect().top < window.innerHeight) loadMoreRef.current();
+    }, [items.length, hasMore, moreFetcher.state]);
+
+    useEffect(() => {
+        const t = setInterval(() => pollRef.current(), POLL_INTERVAL_MS);
+        return () => clearInterval(t);
+    }, []);
+
+    const [queryInput, setQueryInput] = useState(urlQuery);
+    useEffect(() => { setQueryInput(urlQuery); }, [urlQuery]);
+    useEffect(() => {
+        if (queryInput.trim() === urlQuery) return;
+        const t = setTimeout(() => {
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                const v = queryInput.trim();
+                if (v) next.set("q", v); else next.delete("q");
+                next.delete("offset");
+                return next;
+            }, { preventScrollReset: true });
+        }, 300);
+        return () => clearTimeout(t);
+    }, [queryInput, urlQuery, setSearchParams]);
+
+    const updateParams = (mut: (p: URLSearchParams) => void) => setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        mut(next);
+        next.delete("offset");
+        return next;
+    }, { preventScrollReset: true });
+    const toggleState = (s: string) => updateParams(p => (stateFilter === s ? p.delete("state") : p.set("state", s)));
+    const setSortKey = (s: string) => updateParams(p => (s && s !== "default" ? p.set("sort", s) : p.delete("sort")));
+    const clearFilters = () => updateParams(p => { p.delete("state"); p.delete("q"); });
 
     useEffect(() => {
         if (discovered) {
@@ -93,12 +206,6 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
         }
     }, [bulkFetcher.state, bulkFetcher.data]);
 
-    useEffect(() => {
-        if (bulkItemFetcher.state === "idle" && bulkItemFetcher.data?.ok) {
-            setSelectedItems(new Set());
-        }
-    }, [bulkItemFetcher.state, bulkItemFetcher.data]);
-
     const chosenCatalogs = (discovered?.catalogs ?? []).filter(c => selected.has(c.url));
     const sourcesJson = JSON.stringify(chosenCatalogs.map(c => ({
         url: c.url,
@@ -106,44 +213,22 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
     })));
 
     const expanders = items.filter(it => it.state === "expander");
+    const expanderKeys = new Set(expanders.map(ex => ex.key));
     const childrenByExpander = new Map<string, WatchtowerItem[]>();
     for (const it of items) {
-        if (!it.expanderKey) continue;
+        if (!it.expanderKey || !expanderKeys.has(it.expanderKey)) continue;
         const arr = childrenByExpander.get(it.expanderKey);
         if (arr) arr.push(it); else childrenByExpander.set(it.expanderKey, [it]);
     }
-    const orphans = items.filter(it => it.state !== "expander" && !it.expanderKey);
+    const orphans = items.filter(it =>
+        it.state !== "expander" && (!it.expanderKey || !expanderKeys.has(it.expanderKey)));
 
-    const q = query.trim().toLowerCase();
-    const textMatch = (it: WatchtowerItem) =>
-        !q || it.title.toLowerCase().includes(q) || it.contentId.toLowerCase().includes(q);
-    const childStateOk = (c: WatchtowerItem) =>
-        !stateFilter || stateFilter === "expander" || c.state === stateFilter;
-    const showAsShow = !stateFilter || stateFilter === "expander";
-    const visibleExpanders = expanders
-        .map(ex => ({
-            ex,
-            kids: (childrenByExpander.get(ex.key) ?? [])
-                .filter(c => (textMatch(c) || textMatch(ex)) && childStateOk(c)),
-        }))
-        .filter(g => g.kids.length > 0 || (showAsShow && textMatch(g.ex)));
-    const visibleOrphans = orphans.filter(it =>
-        textMatch(it) && (!stateFilter || it.state === stateFilter));
-    const filtering = q !== "" || stateFilter !== null;
-    const nothingShown = visibleExpanders.length === 0 && visibleOrphans.length === 0;
-
-    const forceOpenShows = q !== "" || (stateFilter !== null && stateFilter !== "expander");
+    const forceOpenShows = urlQuery !== "";
     const isShowOpen = (key: string) => forceOpenShows || expandedShows.has(key);
 
-    const entries: WtEntry[] = [
-        ...visibleExpanders.map(g => ({ kind: "show" as const, ex: g.ex, kids: g.kids })),
-        ...visibleOrphans.map(it => ({ kind: "item" as const, it })),
-    ];
-    const sortedEntries = sortEntries(entries, sortKey);
-
     const allVisibleLeafKeys = [
-        ...visibleOrphans.map(it => it.key),
-        ...visibleExpanders.flatMap(g => g.kids.map(k => k.key)),
+        ...orphans.map(it => it.key),
+        ...expanders.flatMap(ex => (childrenByExpander.get(ex.key) ?? []).map(k => k.key)),
     ];
     const allVisibleSelected = allVisibleLeafKeys.length > 0 && allVisibleLeafKeys.every(k => selectedItems.has(k));
     const someVisibleSelected = allVisibleLeafKeys.some(k => selectedItems.has(k));
@@ -158,23 +243,15 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
         if (select) keys.forEach(k => next.add(k)); else keys.forEach(k => next.delete(k));
         return next;
     });
-    const fullySelectedExpanderKeys = expanders
-        .filter(ex => {
-            const kids = childrenByExpander.get(ex.key) ?? [];
-            return kids.length > 0 && kids.every(k => selectedItems.has(k.key));
-        })
-        .map(ex => ex.key);
-    const bulkKeysValue = [...selectedItems, ...fullySelectedExpanderKeys].join("\n");
-    const unavailableKeys = items.filter(it => it.state === "unavailable").map(it => it.key);
+    const bulkKeysValue = [...selectedItems].join("\n");
+
+    const bulkBusy = bulkItemFetcher.state !== "idle";
+    const filterBusy = filterFetcher.state !== "idle";
+    const nothingShown = items.length === 0;
 
     useEffect(() => {
         if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
     }, [someVisibleSelected, allVisibleSelected]);
-
-    useEffect(() => {
-        const t = setInterval(() => revalidator.revalidate(), POLL_INTERVAL_MS);
-        return () => clearInterval(t);
-    }, [revalidator]);
 
     return (
         <div className={styles.page}>
@@ -188,14 +265,14 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     </div>
                 </div>
                 <div className={styles.stats}>
-                    <Stat label="Ready" value={stats.ready} tone="ok" active={stateFilter === "ready"} onClick={() => toggle("ready")} />
-                    <Stat label="Scouting" value={stats.scouting} tone="warn" active={stateFilter === "scouting"} onClick={() => toggle("scouting")} />
-                    <Stat label="Unavailable" value={stats.unavailable} tone="bad" active={stateFilter === "unavailable"} onClick={() => toggle("unavailable")} />
+                    <Stat label="Ready" value={stats.ready} tone="ok" active={stateFilter === "ready"} onClick={() => toggleState("ready")} />
+                    <Stat label="Scouting" value={stats.scouting} tone="warn" active={stateFilter === "scouting"} onClick={() => toggleState("scouting")} />
+                    <Stat label="Unavailable" value={stats.unavailable} tone="bad" active={stateFilter === "unavailable"} onClick={() => toggleState("unavailable")} />
                     {stats.parked > 0 && (
-                        <Stat label="Parked" value={stats.parked} active={stateFilter === "parked"} onClick={() => toggle("parked")} />
+                        <Stat label="Parked" value={stats.parked} active={stateFilter === "parked"} onClick={() => toggleState("parked")} />
                     )}
-                    <Stat label="Shows" value={stats.expanders} active={stateFilter === "expander"} onClick={() => toggle("expander")} />
-                    <Stat label="Total" value={stats.total} active={stateFilter === null} onClick={() => setStateFilter(null)} />
+                    <Stat label="Shows" value={stats.expanders} active={stateFilter === "expander"} onClick={() => toggleState("expander")} />
+                    <Stat label="Total" value={stats.total} active={stateFilter === null} onClick={() => clearFilters()} />
                 </div>
             </div>
 
@@ -340,7 +417,7 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     <Button type="submit" variant="primary" disabled={addFetcher.state !== "idle"}>Add item</Button>
                 </addFetcher.Form>
 
-                {items.length > 0 && (
+                {stats.total > 0 && (
                     <div className={styles.toolbar}>
                         <label className={styles.selectAll} title="Select all items shown">
                             <input
@@ -353,8 +430,8 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                             All
                         </label>
                         <Form.Control
-                            value={query}
-                            onChange={e => setQuery(e.target.value)}
+                            value={queryInput}
+                            onChange={e => setQueryInput(e.target.value)}
                             placeholder="Search title or id…"
                             className={styles.search}
                         />
@@ -364,25 +441,52 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                             className={styles.sortSelect}
                             title="Sort wanted items"
                         >
-                            <option value="default">Sort: default</option>
+                            <option value="default">Sort: recent</option>
                             <option value="status">Status (issues first)</option>
                             <option value="title">Title A–Z</option>
-                            <option value="size">Largest</option>
                             <option value="recheck">Re-check soonest</option>
                         </Form.Select>
                         {filtering && (
-                            <button type="button" className={styles.linkBtn}
-                                onClick={() => { setQuery(""); setStateFilter(null); }}>clear</button>
+                            <button type="button" className={styles.linkBtn} onClick={clearFilters}>clear</button>
                         )}
                         {stats.unavailable > 0 && (
-                            <bulkItemFetcher.Form method="post" className={styles.toolbarRight}>
-                                <input type="hidden" name="action" value="bulk-recheck" />
-                                <input type="hidden" name="keys" value={unavailableKeys.join("\n")} readOnly />
-                                <button type="submit" className={styles.linkBtn} disabled={bulkBusy}>
+                            <filterFetcher.Form method="post" className={styles.toolbarRight}>
+                                <input type="hidden" name="action" value="recheck-by-filter" />
+                                <input type="hidden" name="state" value="unavailable" />
+                                <button type="submit" className={styles.linkBtn} disabled={filterBusy}>
                                     re-check {stats.unavailable} unavailable
                                 </button>
-                            </bulkItemFetcher.Form>
+                            </filterFetcher.Form>
                         )}
+                    </div>
+                )}
+
+                {filtering && total > 0 && (
+                    <div className={styles.selectionBar}>
+                        <span className={styles.selCount}>{Math.min(items.length, total)}</span>
+                        <span className={styles.selLabel}>of {total} shown</span>
+                        <div className={styles.selActions}>
+                            <filterFetcher.Form method="post">
+                                <input type="hidden" name="action" value="recheck-by-filter" />
+                                {stateFilter && <input type="hidden" name="state" value={stateFilter} />}
+                                {urlQuery && <input type="hidden" name="q" value={urlQuery} />}
+                                <Button type="submit" size="sm" variant="secondary" disabled={filterBusy}>
+                                    {filterBusy ? "Working…" : `Re-check all ${total}`}
+                                </Button>
+                            </filterFetcher.Form>
+                            <filterFetcher.Form
+                                method="post"
+                                onSubmit={e => {
+                                    if (!window.confirm(`Remove all ${total} matching item${total === 1 ? "" : "s"} from Watchtower?`))
+                                        e.preventDefault();
+                                }}
+                            >
+                                <input type="hidden" name="action" value="remove-by-filter" />
+                                {stateFilter && <input type="hidden" name="state" value={stateFilter} />}
+                                {urlQuery && <input type="hidden" name="q" value={urlQuery} />}
+                                <Button type="submit" size="sm" variant="danger" disabled={filterBusy}>Remove all {total}</Button>
+                            </filterFetcher.Form>
+                        </div>
                     </div>
                 )}
 
@@ -414,34 +518,41 @@ export default function Watchtower({ loaderData }: Route.ComponentProps) {
                     </div>
                 )}
 
-                {bulkItemFetcher.data && bulkItemFetcher.data.ok === false && (
+                {(bulkItemFetcher.data && bulkItemFetcher.data.ok === false) && (
                     <div className="alert alert-danger" role="alert">Bulk action failed: {bulkItemFetcher.data.error}</div>
                 )}
+                {(filterFetcher.data && filterFetcher.data.ok === false) && (
+                    <div className="alert alert-danger" role="alert">Bulk action failed: {filterFetcher.data.error}</div>
+                )}
 
-                {items.length === 0
-                    ? <div className={styles.empty}>Nothing wanted yet.</div>
-                    : nothingShown
-                        ? <div className={styles.empty}>No items match.</div>
-                        : <div className={styles.list}>
-                            {sortedEntries.map(e => e.kind === "show"
-                                ? <ExpanderGroup
-                                    key={e.ex.key}
-                                    expander={e.ex}
-                                    episodes={e.kids}
-                                    expanded={isShowOpen(e.ex.key)}
-                                    canToggle={!forceOpenShows}
-                                    onToggle={() => toggleShow(e.ex.key)}
-                                    selectedKeys={selectedItems}
-                                    onToggleSelect={toggleItem}
-                                    onSelectMany={setKeysSelected}
-                                  />
-                                : <ItemRow
-                                    key={e.it.key}
-                                    item={e.it}
-                                    selected={selectedItems.has(e.it.key)}
-                                    onToggleSelect={toggleItem}
-                                  />)}
-                          </div>}
+                {nothingShown
+                    ? <div className={styles.empty}>{filtering ? "No items match." : "Nothing wanted yet."}</div>
+                    : <div className={styles.list}>
+                        {expanders.map(ex => (
+                            <ExpanderGroup
+                                key={ex.key}
+                                expander={ex}
+                                episodes={childrenByExpander.get(ex.key) ?? []}
+                                expanded={isShowOpen(ex.key)}
+                                canToggle={!forceOpenShows}
+                                onToggle={() => toggleShow(ex.key)}
+                                selectedKeys={selectedItems}
+                                onToggleSelect={toggleItem}
+                                onSelectMany={setKeysSelected}
+                            />
+                        ))}
+                        {orphans.map(it => (
+                            <ItemRow
+                                key={it.key}
+                                item={it}
+                                selected={selectedItems.has(it.key)}
+                                onToggleSelect={toggleItem}
+                            />
+                        ))}
+                      </div>}
+
+                <div ref={sentinelRef} />
+                {moreFetcher.state !== "idle" && <div className={styles.empty}>Loading more…</div>}
             </section>
         </div>
     );
@@ -614,7 +725,7 @@ function ExpanderGroup({ expander, episodes, expanded, canToggle, onToggle, sele
                         checked={allSel}
                         disabled={childKeys.length === 0}
                         onChange={() => onSelectMany(childKeys, !allSel)}
-                        aria-label={`Select all of ${expander.title}`}
+                        aria-label={`Select loaded episodes of ${expander.title}`}
                     />
                 </span>
                 <svg className={`${styles.chev} ${expanded ? styles.chevOpen : ""}`} width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -682,47 +793,6 @@ function Stat({ label, value, tone, active, onClick }: { label: string, value: n
             <div className={styles.statLabel}>{label}</div>
         </button>
     );
-}
-
-type WtEntry =
-    | { kind: "show"; ex: WatchtowerItem; kids: WatchtowerItem[] }
-    | { kind: "item"; it: WatchtowerItem };
-
-const STATE_RANK: Record<string, number> = { unavailable: 0, scouting: 1, parked: 2, ready: 3 };
-
-function entryTitle(e: WtEntry): string {
-    return e.kind === "show" ? e.ex.title : e.it.title;
-}
-
-function entryStatusRank(e: WtEntry): number {
-    if (e.kind === "item") return STATE_RANK[e.it.state] ?? 4;
-    if (e.kids.length === 0) return STATE_RANK.scouting;
-    return Math.min(...e.kids.map(k => STATE_RANK[k.state] ?? 4));
-}
-
-function entrySize(e: WtEntry): number {
-    if (e.kind === "item") return e.it.winnerSize || 0;
-    return e.kids.reduce((m, k) => Math.max(m, k.winnerSize || 0), 0);
-}
-
-function entryRecheck(e: WtEntry): number {
-    const vals = e.kind === "item" ? [e.it.nextCheckAtUnix] : e.kids.map(k => k.nextCheckAtUnix);
-    const nums = vals.filter((v): v is number => typeof v === "number" && v > 0);
-    return nums.length ? Math.min(...nums) : Number.POSITIVE_INFINITY;
-}
-
-function sortEntries(entries: WtEntry[], sortKey: string): WtEntry[] {
-    const out = [...entries];
-    const byTitle = (a: WtEntry, b: WtEntry) =>
-        entryTitle(a).localeCompare(entryTitle(b), undefined, { numeric: true, sensitivity: "base" });
-    switch (sortKey) {
-        case "title": out.sort(byTitle); break;
-        case "status": out.sort((a, b) => entryStatusRank(a) - entryStatusRank(b) || byTitle(a, b)); break;
-        case "size": out.sort((a, b) => entrySize(b) - entrySize(a) || byTitle(a, b)); break;
-        case "recheck": out.sort((a, b) => (entryRecheck(a) - entryRecheck(b)) || byTitle(a, b)); break;
-        default: break;
-    }
-    return out;
 }
 
 function formatBytes(bytes: number): string {

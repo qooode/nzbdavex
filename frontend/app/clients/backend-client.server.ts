@@ -321,8 +321,16 @@ class BackendClient {
         return await response.json();
     }
 
-    public async getWatchtower(): Promise<WatchtowerData> {
-        const url = process.env.BACKEND_URL + "/api/get-watchtower";
+    public async getWatchtower(params: WatchtowerQuery = {}): Promise<WatchtowerData> {
+        const qs = new URLSearchParams();
+        if (params.state) qs.set("state", params.state);
+        if (params.q) qs.set("q", params.q);
+        if (params.sort) qs.set("sort", params.sort);
+        if (params.offset) qs.set("offset", String(params.offset));
+        if (params.limit) qs.set("limit", String(params.limit));
+        if (params.statsOnly) qs.set("statsOnly", "1");
+        const query = qs.toString();
+        const url = process.env.BACKEND_URL + "/api/get-watchtower" + (query ? `?${query}` : "");
         const apiKey = process.env.FRONTEND_BACKEND_API_KEY || "";
         const response = await fetch(url, { method: "GET", headers: { "x-api-key": apiKey } });
         if (!response.ok) {
@@ -444,11 +452,22 @@ export type ConfigItem = {
     configValue: string,
 }
 
+export type WatchtowerQuery = {
+    state?: string,
+    q?: string,
+    sort?: string,
+    offset?: number,
+    limit?: number,
+    statsOnly?: boolean,
+}
+
 export type WatchtowerData = {
     status: boolean,
     enabled: boolean,
     sources: WatchtowerSource[],
     items: WatchtowerItem[],
+    total: number,
+    hasMore: boolean,
     stats: WatchtowerStats,
 }
 

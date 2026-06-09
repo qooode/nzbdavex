@@ -44,8 +44,20 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
             case "remove-item":
                 await RemoveItemAsync(form, ct).ConfigureAwait(false);
                 break;
+            case "remove-items":
+                await RemoveItemsAsync(form, now, ct).ConfigureAwait(false);
+                break;
             case "recheck-item":
                 await RecheckItemAsync(form, now, ct).ConfigureAwait(false);
+                break;
+            case "recheck-items":
+                await RecheckItemsAsync(form, now, ct).ConfigureAwait(false);
+                break;
+            case "remove-by-filter":
+                await RemoveByFilterAsync(form, now, ct).ConfigureAwait(false);
+                break;
+            case "recheck-by-filter":
+                await RecheckByFilterAsync(form, now, ct).ConfigureAwait(false);
                 break;
             case "sync-source":
                 await SyncSourceAsync(form, ct).ConfigureAwait(false);
@@ -253,6 +265,90 @@ public class WatchtowerMutateController(DavDatabaseClient dbClient) : BaseApiCon
         if (item.State == WantedItem.StateParked) item.State = WantedItem.StateScouting;
         item.NextCheckAtUnix = now;
         item.UpdatedAtUnix = now;
+    }
+
+    private async Task RemoveItemsAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        foreach (var chunk in ReadKeys(form).Chunk(500))
+        {
+            var items = await dbClient.Ctx.WantedItems
+                .Where(w => chunk.Contains(w.Key))
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var item in items)
+            {
+                if (dbClient.Ctx.Entry(item).State == EntityState.Deleted) continue;
+                await WtReconcile.RemoveWithChildrenAsync(dbClient.Ctx, item, now, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task RecheckItemsAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        foreach (var chunk in ReadKeys(form).Chunk(500))
+        {
+            var items = await dbClient.Ctx.WantedItems
+                .Where(w => chunk.Contains(w.Key))
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var item in items)
+            {
+                if (item.State == WantedItem.StateParked) item.State = WantedItem.StateScouting;
+                item.NextCheckAtUnix = now;
+                item.UpdatedAtUnix = now;
+            }
+        }
+    }
+
+    private static string[] ReadKeys(IFormCollection form) => form["keys"].ToString()
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Distinct()
+        .ToArray();
+
+    private async Task RemoveByFilterAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        var keys = await FilteredKeysAsync(form, ct).ConfigureAwait(false);
+        foreach (var chunk in keys.Chunk(500))
+        {
+            var items = await dbClient.Ctx.WantedItems
+                .Where(w => chunk.Contains(w.Key))
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var item in items)
+            {
+                if (dbClient.Ctx.Entry(item).State == EntityState.Deleted) continue;
+                await WtReconcile.RemoveWithChildrenAsync(dbClient.Ctx, item, now, ct).ConfigureAwait(false);
+            }
+            await dbClient.Ctx.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RecheckByFilterAsync(IFormCollection form, long now, CancellationToken ct)
+    {
+        var keys = await FilteredKeysAsync(form, ct).ConfigureAwait(false);
+        foreach (var chunk in keys.Chunk(500))
+        {
+            var items = await dbClient.Ctx.WantedItems
+                .Where(w => chunk.Contains(w.Key))
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var item in items)
+            {
+                if (item.State == WantedItem.StateParked) item.State = WantedItem.StateScouting;
+                item.NextCheckAtUnix = now;
+                item.UpdatedAtUnix = now;
+            }
+            await dbClient.Ctx.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<List<string>> FilteredKeysAsync(IFormCollection form, CancellationToken ct)
+    {
+        var state = form["state"].ToString();
+        var q = form["q"].ToString().Trim();
+        var query = dbClient.Ctx.WantedItems.AsNoTracking();
+        if (state is WantedItem.StateReady or WantedItem.StateScouting or WantedItem.StateUnavailable
+            or WantedItem.StateParked or WantedItem.StateExpander)
+            query = query.Where(w => w.State == state);
+        if (!string.IsNullOrWhiteSpace(q))
+            query = query.Where(w => w.Title.Contains(q) || w.ContentId.Contains(q));
+        return await query.Select(w => w.Key).ToListAsync(ct).ConfigureAwait(false);
     }
 
     private async Task SyncSourceAsync(IFormCollection form, CancellationToken ct)

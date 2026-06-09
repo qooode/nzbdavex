@@ -15,15 +15,67 @@ public class GetWatchtowerController(DavDatabaseClient dbClient, ConfigManager c
     protected override async Task<IActionResult> HandleRequest()
     {
         var ct = HttpContext.RequestAborted;
+        var query = HttpContext.Request.Query;
+        var statsOnly = query["statsOnly"].ToString() is "1" or "true";
 
         var sources = await dbClient.Ctx.ListSources.AsNoTracking()
             .OrderBy(s => s.CreatedAtUnix)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        var items = await dbClient.Ctx.WantedItems.AsNoTracking()
-            .OrderByDescending(w => w.UpdatedAtUnix)
-            .Take(500)
+        var counts = await dbClient.Ctx.WantedItems.AsNoTracking()
+            .GroupBy(w => w.State)
+            .Select(g => new { State = g.Key, Count = g.Count() })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        int CountFor(string s) => counts.FirstOrDefault(c => c.State == s)?.Count ?? 0;
+
+        var stats = new GetWatchtowerResponse.StatsDto
+        {
+            Total = counts.Sum(c => c.Count),
+            Ready = CountFor(WantedItem.StateReady),
+            Scouting = CountFor(WantedItem.StateScouting),
+            Unavailable = CountFor(WantedItem.StateUnavailable),
+            Parked = CountFor(WantedItem.StateParked),
+            Expanders = CountFor(WantedItem.StateExpander),
+        };
+
+        var sourceDtos = sources.Select(s => new GetWatchtowerResponse.SourceDto
+        {
+            Id = s.Id.ToString(),
+            Kind = s.Kind,
+            Name = s.Name,
+            Url = s.Url,
+            Enabled = s.Enabled,
+            Cap = s.Cap,
+            SeriesScope = s.SeriesScope,
+            LastSyncedAtUnix = s.LastSyncedAtUnix,
+            LastSyncError = s.LastSyncError,
+        }).ToList();
+
+        if (statsOnly)
+        {
+            return Ok(new GetWatchtowerResponse
+            {
+                Status = true,
+                Enabled = configManager.IsWatchtowerEnabled(),
+                Sources = sourceDtos,
+                Items = new List<GetWatchtowerResponse.ItemDto>(),
+                Total = stats.Total,
+                HasMore = false,
+                Stats = stats,
+            });
+        }
+
+        var offset = int.TryParse(query["offset"].ToString(), out var o) ? Math.Max(0, o) : 0;
+        var limit = int.TryParse(query["limit"].ToString(), out var l) ? Math.Clamp(l, 1, 200) : 100;
+
+        var filtered = FilteredItems(query["state"].ToString(), query["q"].ToString().Trim());
+        var total = await filtered.CountAsync(ct).ConfigureAwait(false);
+
+        var page = await ApplySort(filtered, query["sort"].ToString())
+            .Skip(offset)
+            .Take(limit)
             .Select(w => new
             {
                 w.Key,
@@ -40,30 +92,12 @@ public class GetWatchtowerController(DavDatabaseClient dbClient, ConfigManager c
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        var counts = await dbClient.Ctx.WantedItems.AsNoTracking()
-            .GroupBy(w => w.State)
-            .Select(g => new { State = g.Key, Count = g.Count() })
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-        int CountFor(string s) => counts.FirstOrDefault(c => c.State == s)?.Count ?? 0;
-
         return Ok(new GetWatchtowerResponse
         {
             Status = true,
             Enabled = configManager.IsWatchtowerEnabled(),
-            Sources = sources.Select(s => new GetWatchtowerResponse.SourceDto
-            {
-                Id = s.Id.ToString(),
-                Kind = s.Kind,
-                Name = s.Name,
-                Url = s.Url,
-                Enabled = s.Enabled,
-                Cap = s.Cap,
-                SeriesScope = s.SeriesScope,
-                LastSyncedAtUnix = s.LastSyncedAtUnix,
-                LastSyncError = s.LastSyncError,
-            }).ToList(),
-            Items = items.Select(w =>
+            Sources = sourceDtos,
+            Items = page.Select(w =>
             {
                 var shortlist = WtJson.ReadPointers(w.Shortlist);
                 var winner = shortlist.FirstOrDefault();
@@ -86,17 +120,40 @@ public class GetWatchtowerController(DavDatabaseClient dbClient, ConfigManager c
                     FailReason = w.FailReason,
                 };
             }).ToList(),
-            Stats = new GetWatchtowerResponse.StatsDto
-            {
-                Total = counts.Sum(c => c.Count),
-                Ready = CountFor(WantedItem.StateReady),
-                Scouting = CountFor(WantedItem.StateScouting),
-                Unavailable = CountFor(WantedItem.StateUnavailable),
-                Parked = CountFor(WantedItem.StateParked),
-                Expanders = CountFor(WantedItem.StateExpander),
-            },
+            Total = total,
+            HasMore = offset + page.Count < total,
+            Stats = stats,
         });
     }
+
+    private IQueryable<WantedItem> FilteredItems(string? state, string? q)
+    {
+        var filtered = dbClient.Ctx.WantedItems.AsNoTracking();
+        if (IsValidState(state))
+            filtered = filtered.Where(w => w.State == state);
+        if (!string.IsNullOrWhiteSpace(q))
+            filtered = filtered.Where(w => w.Title.Contains(q) || w.ContentId.Contains(q));
+        return filtered;
+    }
+
+    private static bool IsValidState(string? s) => s is WantedItem.StateReady or WantedItem.StateScouting
+        or WantedItem.StateUnavailable or WantedItem.StateParked or WantedItem.StateExpander;
+
+    private static IQueryable<WantedItem> ApplySort(IQueryable<WantedItem> q, string? sort) => sort switch
+    {
+        "title" => q.OrderBy(w => w.Title).ThenBy(w => w.Key),
+        "recheck" => q.OrderBy(w => w.NextCheckAtUnix == null).ThenBy(w => w.NextCheckAtUnix).ThenBy(w => w.Key),
+        "status" => q
+            .OrderBy(w =>
+                w.State == WantedItem.StateUnavailable ? 0
+                : w.State == WantedItem.StateScouting ? 1
+                : w.State == WantedItem.StateParked ? 2
+                : w.State == WantedItem.StateReady ? 3
+                : 4)
+            .ThenByDescending(w => w.UpdatedAtUnix)
+            .ThenBy(w => w.Key),
+        _ => q.OrderByDescending(w => w.UpdatedAtUnix).ThenBy(w => w.Key),
+    };
 }
 
 public class GetWatchtowerResponse : BaseApiResponse
@@ -104,6 +161,8 @@ public class GetWatchtowerResponse : BaseApiResponse
     [JsonPropertyName("enabled")] public required bool Enabled { get; init; }
     [JsonPropertyName("sources")] public required List<SourceDto> Sources { get; init; }
     [JsonPropertyName("items")] public required List<ItemDto> Items { get; init; }
+    [JsonPropertyName("total")] public required int Total { get; init; }
+    [JsonPropertyName("hasMore")] public required bool HasMore { get; init; }
     [JsonPropertyName("stats")] public required StatsDto Stats { get; init; }
 
     public class SourceDto
