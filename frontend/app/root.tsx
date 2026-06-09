@@ -49,10 +49,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#0a0a0a" />
         <title>davex</title>
-        <link rel="icon" type="image/x-icon" href="/favicon.ico?v=5" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=5" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png?v=5" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=5" />
+        <link rel="icon" type="image/x-icon" href="/favicon.ico?v=6" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=6" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png?v=6" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=6" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />

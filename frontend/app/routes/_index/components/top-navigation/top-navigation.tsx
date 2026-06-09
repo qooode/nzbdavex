@@ -14,7 +14,7 @@ export const TopNavigation = memo(function TopNavigation(props: TopNavigationPro
     <div className={styles["container"]}>
       <HamburgerMenu isOpen={isHamburgerMenuOpen} onClick={onHamburgerMenuClick} />
       <div className={styles["title-container"]} onClick={() => navigate("/")}>
-        <img className={styles["logo"]} src="/logo.png?v=5" alt="davex" />
+        <img className={styles["logo"]} src="/logo.png?v=6" alt="davex" />
         <div className={styles["title"]}>davex</div>
       </div>
     </div>
