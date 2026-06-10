@@ -24,6 +24,7 @@ public class WardenSourcesImportController(WardenStore warden, WardenRemoteSourc
         var form = HttpContext.Request.Form;
         var defaultTrust = form["trust"].ToString();
         if (string.IsNullOrWhiteSpace(defaultTrust)) defaultTrust = WardenStore.TrustCorroborate;
+        var defaultRefresh = int.TryParse(form["refreshHours"].ToString(), out var drh) ? drh : 24;
 
         string content;
         if (form.Files.Count > 0)
@@ -44,7 +45,7 @@ public class WardenSourcesImportController(WardenStore warden, WardenRemoteSourc
         if (content.Length > MaxUploadBytes)
             throw new BadHttpRequestException("Input is too large.");
 
-        var specs = Parse(content, defaultTrust, out var invalid);
+        var specs = Parse(content, defaultTrust, defaultRefresh, out var invalid);
         if (specs.Count == 0 && invalid == 0)
             throw new BadHttpRequestException("Nothing found.");
 
@@ -66,7 +67,7 @@ public class WardenSourcesImportController(WardenStore warden, WardenRemoteSourc
         });
     }
 
-    private static List<RemoteSourceSpec> Parse(string content, string defaultTrust, out int invalid)
+    private static List<RemoteSourceSpec> Parse(string content, string defaultTrust, int defaultRefresh, out int invalid)
     {
         invalid = 0;
         var specs = new List<RemoteSourceSpec>();
@@ -90,14 +91,14 @@ public class WardenSourcesImportController(WardenStore warden, WardenRemoteSourc
                         if (specs.Count >= MaxItems) break;
                         if (el.ValueKind == JsonValueKind.String)
                         {
-                            AddSpec(specs, el.GetString(), null, defaultTrust, 24, ref invalid);
+                            AddSpec(specs, el.GetString(), null, defaultTrust, defaultRefresh, ref invalid);
                         }
                         else if (el.ValueKind == JsonValueKind.Object)
                         {
                             var url = el.TryGetProperty("url", out var u) ? u.GetString() : null;
                             var name = el.TryGetProperty("name", out var n) ? n.GetString() : null;
                             var trust = el.TryGetProperty("trust", out var t) ? t.GetString() : null;
-                            var rh = el.TryGetProperty("refreshHours", out var r) && r.TryGetInt32(out var rv) ? rv : 24;
+                            var rh = el.TryGetProperty("refreshHours", out var r) && r.TryGetInt32(out var rv) ? rv : defaultRefresh;
                             AddSpec(specs, url, name, string.IsNullOrWhiteSpace(trust) ? defaultTrust : trust, rh, ref invalid);
                         }
                     }
@@ -114,7 +115,7 @@ public class WardenSourcesImportController(WardenStore warden, WardenRemoteSourc
             if (specs.Count >= MaxItems) break;
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith('#')) continue;
-            AddSpec(specs, line, null, defaultTrust, 24, ref invalid);
+            AddSpec(specs, line, null, defaultTrust, defaultRefresh, ref invalid);
         }
         return specs;
     }

@@ -100,6 +100,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
     const [bulkText, setBulkText] = useState("");
     const [bulkTrust, setBulkTrust] = useState<Trust>("corroborate");
     const [bulkFile, setBulkFile] = useState<File | null>(null);
+    const [bulkInterval, setBulkInterval] = useState("24");
     const bulkFileRef = useRef<HTMLInputElement>(null);
 
     const [confirm, setConfirm] = useState<{ kind: "remove" | "clear"; source: Source } | null>(null);
@@ -237,6 +238,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
             if (bulkFile) form.append("file", bulkFile);
             if (bulkText.trim()) form.append("text", bulkText);
             form.append("trust", bulkTrust);
+            form.append("refreshHours", bulkInterval);
             const data = await post("/api/warden-sources-import", form);
             const parts = [`Added ${(data.added ?? 0).toLocaleString()}`];
             if (data.skipped) parts.push(`${data.skipped.toLocaleString()} already present`);
@@ -478,7 +480,12 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                             <div key={s.id} className={`${styles.card} ${!s.enabled ? styles.cardDisabled : ""}`}>
                                 <div className={styles.cardHeader}>
                                     <div className={styles.cardTitle}>
-                                        <span className={styles.name}>{s.name}</span>
+                                        {isLocal
+                                            ? <span className={styles.name}>{s.name}</span>
+                                            : <input className={styles.nameInput} defaultValue={s.name} disabled={rowBusy}
+                                                key={`nm-${s.id}-${s.name}`}
+                                                onBlur={e => { const v = e.target.value.trim(); if (v && v !== s.name) updateSource(s.id, { name: v }); }}
+                                                onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />}
                                         <span className={`${styles.kind} ${km.cls}`}>{km.label}</span>
                                         {rowBusy && <Spinner as="span" animation="border" size="sm" />}
                                     </div>
@@ -522,8 +529,17 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                                             onChange={e => updateSource(s.id, { enabled: String(e.target.checked) })} />}
 
                                     {s.kind === "remote" &&
+                                        <div className={styles.metaItem}>
+                                            <span className={styles.metaLabel}>Refresh (h)</span>
+                                            <Form.Control type="number" min={1} max={720} size="sm" className={styles.refreshInput}
+                                                key={`rh-${s.id}-${s.refreshHours}`} defaultValue={s.refreshHours} disabled={rowBusy}
+                                                onBlur={e => { const v = parseInt(e.target.value, 10); if (v && v !== s.refreshHours) updateSource(s.id, { refreshHours: String(v) }); }}
+                                                onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                                        </div>}
+
+                                    {s.kind === "remote" &&
                                         <span className={`${styles.status} ${statusErr ? styles.statusError : ""}`}>
-                                            every {s.refreshHours}h · updated {ago(s.lastUpdated)}{s.status ? ` · ${s.status}` : ""}
+                                            updated {ago(s.lastUpdated)}{s.status ? ` · ${s.status}` : ""}
                                         </span>}
                                 </div>
                             </div>
@@ -633,15 +649,23 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     </div>
                     <input ref={bulkFileRef} type="file" accept=".json,.txt,application/json,text/plain"
                         style={{ display: "none" }} onChange={e => setBulkFile(e.target.files?.[0] ?? null)} />
-                    <Form.Group className={styles.modalGroup} style={{ marginTop: 14 }}>
-                        <Form.Label>Trust for these</Form.Label>
-                        <Form.Select value={bulkTrust} onChange={e => setBulkTrust(e.target.value as Trust)}>
-                            <option value="corroborate">corroborate (recommended)</option>
-                            <option value="full">full</option>
-                            <option value="observe">observe</option>
-                        </Form.Select>
-                        <Form.Text muted>{TRUST_HELP[bulkTrust]}. A file can override this per entry.</Form.Text>
-                    </Form.Group>
+                    <div className={styles.modalRow} style={{ marginTop: 14 }}>
+                        <Form.Group style={{ flex: 1 }}>
+                            <Form.Label>Trust for these</Form.Label>
+                            <Form.Select value={bulkTrust} onChange={e => setBulkTrust(e.target.value as Trust)}>
+                                <option value="corroborate">corroborate (recommended)</option>
+                                <option value="full">full</option>
+                                <option value="observe">observe</option>
+                            </Form.Select>
+                            <Form.Text muted>{TRUST_HELP[bulkTrust]}. A file can override per entry.</Form.Text>
+                        </Form.Group>
+                        <Form.Group style={{ width: 130 }}>
+                            <Form.Label>Refresh (h)</Form.Label>
+                            <Form.Control type="number" min={1} max={720} value={bulkInterval}
+                                onChange={e => setBulkInterval(e.target.value)} />
+                            <Form.Text muted>Per entry in a file wins.</Form.Text>
+                        </Form.Group>
+                    </div>
                     <hr />
                     <div className={styles.fileRow}>
                         <Button variant="outline-secondary" size="sm" disabled={!sources.some(s => s.kind === "remote")}

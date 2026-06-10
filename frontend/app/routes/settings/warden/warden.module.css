@@ -191,6 +191,35 @@
     background-position: right 8px center;
 }
 
+.refreshInput {
+    width: 72px;
+    flex-shrink: 0;
+    padding: 3px 8px;
+    font-size: 12px;
+}
+
+.nameInput {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 6px;
+    min-width: 0;
+    max-width: 240px;
+}
+
+.nameInput:hover {
+    border-color: var(--border-subtle);
+}
+
+.nameInput:focus {
+    outline: none;
+    border-color: var(--border-subtle);
+    background: var(--bg-surface-2);
+}
+
 .dropHint {
     color: var(--text-muted);
     font-size: 0.8rem;
