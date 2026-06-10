@@ -179,6 +179,61 @@ public partial class WardenStore
         return id;
     }
 
+    public (int added, int skipped) ImportRemoteSources(IReadOnlyList<RemoteSourceSpec> specs)
+    {
+        if (specs.Count == 0) return (0, 0);
+
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var sel = conn.CreateCommand())
+        {
+            sel.Transaction = tx;
+            sel.CommandText = "SELECT url FROM warden_sources WHERE url IS NOT NULL";
+            using var r = sel.ExecuteReader();
+            while (r.Read())
+                if (!r.IsDBNull(0)) existing.Add(r.GetString(0));
+        }
+
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText =
+            "INSERT INTO warden_sources (id, kind, name, url, enabled, trust, refresh_hours, last_checked, last_updated, status, sort) " +
+            "VALUES ($id, 'remote', $name, $url, 1, $trust, $rh, 0, 0, NULL, (SELECT COALESCE(MAX(sort),0)+1 FROM warden_sources))";
+        var pId = new SqliteParameter("$id", SqliteType.Text);
+        var pName = new SqliteParameter("$name", SqliteType.Text);
+        var pUrl = new SqliteParameter("$url", SqliteType.Text);
+        var pTrust = new SqliteParameter("$trust", SqliteType.Text);
+        var pRh = new SqliteParameter("$rh", SqliteType.Integer);
+        cmd.Parameters.Add(pId);
+        cmd.Parameters.Add(pName);
+        cmd.Parameters.Add(pUrl);
+        cmd.Parameters.Add(pTrust);
+        cmd.Parameters.Add(pRh);
+
+        var added = 0;
+        var skipped = 0;
+        foreach (var spec in specs)
+        {
+            var url = spec.Url?.Trim();
+            if (string.IsNullOrEmpty(url) || !existing.Add(url)) { skipped++; continue; }
+
+            pId.Value = "src_" + Guid.NewGuid().ToString("n")[..12];
+            pName.Value = string.IsNullOrWhiteSpace(spec.Name)
+                ? (Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : "Untitled")
+                : spec.Name!.Trim();
+            pUrl.Value = url;
+            pTrust.Value = NormalizeTrust(spec.Trust);
+            pRh.Value = ClampRefreshHours(spec.RefreshHours);
+            cmd.ExecuteNonQuery();
+            added++;
+        }
+
+        tx.Commit();
+        return (added, skipped);
+    }
+
     public void UpdateSource(string id, bool? enabled, string? trust, int? refreshHours, string? name)
     {
         if (id == LocalSourceId) return;
@@ -621,4 +676,12 @@ public class WardenSourceInfo
     [JsonPropertyName("lastUpdated")] public long LastUpdated { get; set; }
     [JsonPropertyName("status")] public string? Status { get; set; }
     [JsonPropertyName("count")] public int Count { get; set; }
+}
+
+public class RemoteSourceSpec
+{
+    public string Url { get; set; } = "";
+    public string? Name { get; set; }
+    public string? Trust { get; set; }
+    public int RefreshHours { get; set; } = 24;
 }

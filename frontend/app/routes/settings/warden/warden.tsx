@@ -96,6 +96,12 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
     const [remoteInterval, setRemoteInterval] = useState("24");
     const [remoteTrust, setRemoteTrust] = useState<Trust>("corroborate");
 
+    const [showBulk, setShowBulk] = useState(false);
+    const [bulkText, setBulkText] = useState("");
+    const [bulkTrust, setBulkTrust] = useState<Trust>("corroborate");
+    const [bulkFile, setBulkFile] = useState<File | null>(null);
+    const bulkFileRef = useRef<HTMLInputElement>(null);
+
     const [confirm, setConfirm] = useState<{ kind: "remove" | "clear"; source: Source } | null>(null);
 
     const [backup, setBackup] = useState<BackupStatus | null>(null);
@@ -221,6 +227,40 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
         } finally {
             setBusy(null);
         }
+    };
+
+    const submitBulk = async () => {
+        setBusy("bulk");
+        setMessage(null);
+        try {
+            const form = new FormData();
+            if (bulkFile) form.append("file", bulkFile);
+            if (bulkText.trim()) form.append("text", bulkText);
+            form.append("trust", bulkTrust);
+            const data = await post("/api/warden-sources-import", form);
+            const parts = [`Added ${(data.added ?? 0).toLocaleString()}`];
+            if (data.skipped) parts.push(`${data.skipped.toLocaleString()} already present`);
+            if (data.invalid) parts.push(`${data.invalid.toLocaleString()} invalid`);
+            setMessage({ text: parts.join(" · ") + ".", variant: data.added ? "success" : "danger" });
+            setShowBulk(false);
+            setBulkText("");
+            setBulkFile(null);
+            if (bulkFileRef.current) bulkFileRef.current.value = "";
+            await refresh();
+        } catch (err: any) {
+            setMessage({ text: err?.message || "Import failed.", variant: "danger" });
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const exportSourcesBundle = () => {
+        const a = document.createElement("a");
+        a.href = "/api/warden-sources-export";
+        a.download = "bundle.json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
     };
 
     const updateSource = async (id: string, fields: Record<string, string>) => {
@@ -400,6 +440,10 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     <div className={styles.headerActions}>
                         <Button variant="primary" size="sm" onClick={() => setShowAddRemote(true)}>Add remote list</Button>
                         <Button variant="outline-secondary" size="sm" disabled={busy !== null}
+                            onClick={() => setShowBulk(true)}>
+                            Bundle
+                        </Button>
+                        <Button variant="outline-secondary" size="sm" disabled={busy !== null}
                             onClick={() => { setPendingFile(null); setShowImport(true); }}>
                             Import
                         </Button>
@@ -569,6 +613,48 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     <Button variant="secondary" onClick={() => setShowAddRemote(false)}>Cancel</Button>
                     <Button variant="primary" disabled={busy === "add-remote" || !remoteUrl.trim()} onClick={addRemoteSource}>
                         {busy === "add-remote" ? <><Spinner as="span" animation="border" size="sm" /> Adding…</> : "Add & fetch"}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            <Modal show={showBulk} onHide={() => setShowBulk(false)} centered>
+                <Modal.Header closeButton><Modal.Title>Bundle</Modal.Title></Modal.Header>
+                <Modal.Body>
+                    <Form.Group className={styles.modalGroup}>
+                        <Form.Label>Paste entries (one per line)</Form.Label>
+                        <Form.Control as="textarea" rows={5} value={bulkText}
+                            onChange={e => setBulkText(e.target.value)}
+                            placeholder={"https://example.com/a.ndjson.gz\nhttps://example.com/b.ndjson.gz"} />
+                        <Form.Text muted>Or choose a file below. Lines starting with # are ignored. Ones you already have are skipped.</Form.Text>
+                    </Form.Group>
+                    <div className={styles.fileRow}>
+                        <Button variant="outline-secondary" size="sm" onClick={() => bulkFileRef.current?.click()}>Choose file…</Button>
+                        <span className={styles.fileName}>{bulkFile ? bulkFile.name : "No file selected"}</span>
+                    </div>
+                    <input ref={bulkFileRef} type="file" accept=".json,.txt,application/json,text/plain"
+                        style={{ display: "none" }} onChange={e => setBulkFile(e.target.files?.[0] ?? null)} />
+                    <Form.Group className={styles.modalGroup} style={{ marginTop: 14 }}>
+                        <Form.Label>Trust for these</Form.Label>
+                        <Form.Select value={bulkTrust} onChange={e => setBulkTrust(e.target.value as Trust)}>
+                            <option value="corroborate">corroborate (recommended)</option>
+                            <option value="full">full</option>
+                            <option value="observe">observe</option>
+                        </Form.Select>
+                        <Form.Text muted>{TRUST_HELP[bulkTrust]}. A file can override this per entry.</Form.Text>
+                    </Form.Group>
+                    <hr />
+                    <div className={styles.fileRow}>
+                        <Button variant="outline-secondary" size="sm" disabled={!sources.some(s => s.kind === "remote")}
+                            onClick={exportSourcesBundle}>
+                            Export bundle…
+                        </Button>
+                        <span className={styles.fileName}>Save a file you can share or re-import.</span>
+                    </div>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowBulk(false)}>Cancel</Button>
+                    <Button variant="primary" disabled={busy === "bulk" || (!bulkText.trim() && !bulkFile)} onClick={submitBulk}>
+                        {busy === "bulk" ? <><Spinner as="span" animation="border" size="sm" /> Importing…</> : "Import"}
                     </Button>
                 </Modal.Footer>
             </Modal>
