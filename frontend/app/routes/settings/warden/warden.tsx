@@ -72,6 +72,7 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
     const set = (key: string, value: string) => setNewConfig({ ...config, [key]: value });
     const hideDead = (config["warden.hide-dead"] ?? "true") === "true";
     const quorum = config["warden.quorum"] ?? "2";
+    const backboneScope = (config["warden.backbone-scope"] ?? "true") === "true";
 
     const [snap, setSnap] = useState<Snapshot | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
@@ -426,6 +427,19 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
                     A fingerprint from a “corroborate” source only filters when at least this many
                     independent sources agree. Your own list and “full”-trust sources always filter
                     on their own.
+                </p>
+            </Form.Group>
+
+            <Form.Group className={styles.section}>
+                <Form.Check
+                    type="switch"
+                    id="warden-backbone-scope"
+                    label="Only filter when the provider matches"
+                    checked={backboneScope}
+                    onChange={e => set("warden.backbone-scope", String(e.target.checked))} />
+                <p className={styles.hint}>
+                    A verdict from a remote or imported list only filters when its provider matches one
+                    of yours. Your own list always filters.
                 </p>
             </Form.Group>
 
@@ -837,5 +851,6 @@ export function WardenSettings({ config, setNewConfig }: WardenSettingsProps) {
 
 export function isWardenSettingsUpdated(config: Record<string, string>, newConfig: Record<string, string>) {
     return config["warden.hide-dead"] !== newConfig["warden.hide-dead"]
-        || config["warden.quorum"] !== newConfig["warden.quorum"];
+        || config["warden.quorum"] !== newConfig["warden.quorum"]
+        || config["warden.backbone-scope"] !== newConfig["warden.backbone-scope"];
 }

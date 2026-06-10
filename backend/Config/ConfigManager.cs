@@ -62,6 +62,12 @@ public class ConfigManager
         return v is not null && int.TryParse(v, out var n) && n > 0 ? n : 2_000_000;
     }
 
+    public bool IsWardenBackboneScopeEnabled()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("warden.backbone-scope"));
+        return v is null || v == "true";
+    }
+
     public void UpdateValues(List<ConfigItem> configItems)
     {
         lock (_config)

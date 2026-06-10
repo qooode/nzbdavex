@@ -106,6 +106,7 @@ const defaultConfig = {
     "watchtower.verbose-logging": "false",
     "warden.hide-dead": "true",
     "warden.quorum": "2",
+    "warden.backbone-scope": "true",
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

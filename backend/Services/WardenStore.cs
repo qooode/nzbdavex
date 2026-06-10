@@ -99,18 +99,26 @@ public partial class WardenStore
     {
         if (string.IsNullOrEmpty(fp)) return false;
         var quorum = Math.Max(1, _configManager.GetWardenQuorum());
+        var scope = _configManager.IsWardenBackboneScopeEnabled();
+        var mine = scope
+            ? new HashSet<string>(CurrentBackbones().Where(b => b != "unknown"), StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        if (mine.Count == 0) scope = false;
         try
         {
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText =
-                "SELECT s.trust FROM warden_entries e JOIN warden_sources s ON s.id = e.source_id " +
+                "SELECT s.trust, e.backbones, e.source_id FROM warden_entries e JOIN warden_sources s ON s.id = e.source_id " +
                 "WHERE e.fp = $fp AND s.enabled = 1 AND s.trust IN ('full','corroborate')";
             cmd.Parameters.AddWithValue("$fp", fp);
             using var reader = cmd.ExecuteReader();
             var agree = 0;
             while (reader.Read())
             {
+                if (scope && reader.GetString(2) != LocalSourceId
+                          && !BackboneInScope(reader.IsDBNull(1) ? "" : reader.GetString(1), mine))
+                    continue;
                 if (reader.GetString(0) == TrustFull) return true;
                 if (++agree >= quorum) return true;
             }
@@ -647,6 +655,18 @@ public partial class WardenStore
             ? Array.Empty<string>()
             : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Distinct(StringComparer.Ordinal).ToArray();
+
+    private static bool BackboneInScope(string entryCsv, HashSet<string> mine)
+    {
+        var known = false;
+        foreach (var b in SplitBackbones(entryCsv))
+        {
+            if (b == "unknown") continue;
+            known = true;
+            if (mine.Contains(b)) return true;
+        }
+        return !known;
+    }
 }
 
 public class WardenFile
