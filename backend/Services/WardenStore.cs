@@ -101,7 +101,7 @@ public partial class WardenStore
         var quorum = Math.Max(1, _configManager.GetWardenQuorum());
         var scope = _configManager.IsWardenBackboneScopeEnabled();
         var mine = scope
-            ? new HashSet<string>(CurrentBackbones().Where(b => b != "unknown"), StringComparer.Ordinal)
+            ? new HashSet<string>(CurrentBackbones().Select(WardenFingerprint.RootDomain).Where(b => b != "unknown"), StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
         if (mine.Count == 0) scope = false;
         try
@@ -661,9 +661,10 @@ public partial class WardenStore
         var known = false;
         foreach (var b in SplitBackbones(entryCsv))
         {
-            if (b == "unknown") continue;
+            var rb = WardenFingerprint.RootDomain(b);
+            if (rb == "unknown") continue;
             known = true;
-            if (mine.Contains(b)) return true;
+            if (mine.Contains(rb)) return true;
         }
         return !known;
     }

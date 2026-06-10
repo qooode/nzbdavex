@@ -29,4 +29,19 @@ public static class WardenFingerprint
         if (colon > 0) h = h[..colon];
         return string.IsNullOrEmpty(h) ? "unknown" : h;
     }
+
+    public static string RootDomain(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return "unknown";
+        var h = host.Trim().ToLowerInvariant();
+        var colon = h.IndexOf(':');
+        if (colon > 0) h = h[..colon];
+        h = h.Trim('.');
+        if (h.Length == 0) return "unknown";
+        if (System.Net.IPAddress.TryParse(h, out _)) return h;
+        var labels = h.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (labels.Length <= 2) return h;
+        var take = labels[^1].Length == 2 && labels[^2].Length <= 3 ? 3 : 2;
+        return labels.Length <= take ? h : string.Join('.', labels[^take..]);
+    }
 }
