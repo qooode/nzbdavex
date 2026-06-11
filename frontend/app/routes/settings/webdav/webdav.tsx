@@ -52,8 +52,29 @@ export function WebdavSettings({ config, setNewConfig }: SabnzbdSettingsProps) {
                     value={config["usenet.max-download-connections"]}
                     onChange={e => setNewConfig({ ...config, "usenet.max-download-connections": e.target.value })} />
                 <Form.Text id="max-download-connections-help" muted>
-                    The maximum number of connections that will be used for downloading articles from your usenet provider(s).
-                    Configure this to the minimum number of connections that will fully saturate your server's bandwidth.
+                    The maximum number of connections used for <strong>webdav streaming</strong> (playback).
+                    Set this to the minimum number of connections that fully saturates your streaming bandwidth.
+                    Queue imports use their own budget — see Queue Download Connections below.
+                </Form.Text>
+            </Form.Group>
+            <hr />
+            <Form.Group>
+                <Form.Label htmlFor="max-queue-connections-input">Queue Download Connections</Form.Label>
+                <Form.Control
+                    {...className([styles.input, !isValidMaxQueueConnections(config["usenet.max-queue-connections"]) && styles.error])}
+                    type="text"
+                    id="max-queue-connections-input"
+                    aria-describedby="max-queue-connections-help"
+                    placeholder="Auto (all connections)"
+                    value={config["usenet.max-queue-connections"]}
+                    onChange={e => setNewConfig({ ...config, "usenet.max-queue-connections": e.target.value })} />
+                <Form.Text id="max-queue-connections-help" muted>
+                    Connections the queue may use while importing an nzb (fetching names/sizes, parsing par2/rar).
+                    Higher = faster imports. This is independent of streaming, so you can push imports hard without
+                    touching the streaming budget. It's always capped at your provider's connection limit, so the
+                    queue can never open more connections than your plan allows. Leave blank for Auto (use all your
+                    provider connections); lower it if you'd rather keep imports gentle or reserve connections for
+                    simultaneous streaming.
                 </Form.Text>
             </Form.Group>
             <hr />
@@ -191,6 +212,7 @@ export function isWebdavSettingsUpdated(config: Record<string, string>, newConfi
     return config["webdav.user"] !== newConfig["webdav.user"]
         || config["webdav.pass"] !== newConfig["webdav.pass"]
         || config["usenet.max-download-connections"] !== newConfig["usenet.max-download-connections"]
+        || config["usenet.max-queue-connections"] !== newConfig["usenet.max-queue-connections"]
         || config["usenet.streaming-priority"] !== newConfig["usenet.streaming-priority"]
         || config["usenet.article-buffer-size"] !== newConfig["usenet.article-buffer-size"]
         || config["webdav.show-hidden-files"] !== newConfig["webdav.show-hidden-files"]
@@ -207,6 +229,7 @@ export function isWebdavSettingsValid(newConfig: Record<string, string>) {
             && isPositiveInteger(newConfig["usenet.segment-cache.max-gb"]));
     return isValidUser(newConfig["webdav.user"])
         && isValidMaxDownloadConnections(newConfig["usenet.max-download-connections"])
+        && isValidMaxQueueConnections(newConfig["usenet.max-queue-connections"])
         && isValidStreamingPriority(newConfig["usenet.streaming-priority"])
         && isValidArticleBufferSize(newConfig["usenet.article-buffer-size"])
         && segmentCacheValid;
@@ -223,6 +246,10 @@ function isValidUser(user: string): boolean {
 
 function isValidMaxDownloadConnections(value: string): boolean {
     return isPositiveInteger(value);
+}
+
+function isValidMaxQueueConnections(value: string): boolean {
+    return value.trim() === "" || isPositiveInteger(value);
 }
 
 function isValidStreamingPriority(value: string): boolean {

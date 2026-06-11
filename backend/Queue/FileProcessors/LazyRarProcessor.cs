@@ -203,7 +203,7 @@ public class LazyRarProcessor(
     {
         if (infos.Count == 0) return [];
 
-        using var semaphore = new SemaphoreSlim(configManager.GetMaxDownloadConnections());
+        using var semaphore = new SemaphoreSlim(configManager.GetMaxQueueConnections());
         var tasks = infos.Select(async pi =>
         {
             if (pi.FileSize.HasValue) return pi.FileSize.Value;

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using NzbWebDAV.Clients.Usenet.Concurrency;
 using NzbWebDAV.Clients.Usenet.Connections;
+using NzbWebDAV.Clients.Usenet.Contexts;
 using NzbWebDAV.Clients.Usenet.Models;
 using NzbWebDAV.Exceptions;
 using NzbWebDAV.Extensions;
@@ -80,7 +81,7 @@ public class MultiConnectionNntpClient(
     {
         return RunWithConnection(
             "BODY",
-            SemaphorePriority.High,
+            GetDownloadPriority(ct),
             (connection, onDone) => connection.DecodedBodyAsync(segmentId, onDone, ct),
             onConnectionReadyAgain: null,
             ct
@@ -95,7 +96,7 @@ public class MultiConnectionNntpClient(
     {
         return RunWithConnection(
             "ARTICLE",
-            SemaphorePriority.High,
+            GetDownloadPriority(ct),
             (connection, onDone) => connection.DecodedArticleAsync(segmentId, onDone, ct),
             onConnectionReadyAgain: null,
             ct
@@ -122,7 +123,7 @@ public class MultiConnectionNntpClient(
     {
         return RunWithConnection(
             "BODY",
-            SemaphorePriority.High,
+            GetDownloadPriority(ct),
             (connection, onDone) => connection.DecodedBodyAsync(segmentId, onDone, ct),
             onConnectionReadyAgain,
             ct
@@ -138,7 +139,7 @@ public class MultiConnectionNntpClient(
     {
         return RunWithConnection(
             "ARTICLE",
-            SemaphorePriority.High,
+            GetDownloadPriority(ct),
             (connection, onDone) => connection.DecodedArticleAsync(segmentId, onDone, ct),
             onConnectionReadyAgain,
             ct
@@ -280,6 +281,11 @@ public class MultiConnectionNntpClient(
 
         Log.Error("Unreachable code reached");
         throw new InvalidOperationException("Unreachable code ");
+    }
+
+    private static SemaphorePriority GetDownloadPriority(CancellationToken ct)
+    {
+        return ct.GetContext<DownloadPriorityContext>()?.Priority ?? SemaphorePriority.Low;
     }
 
     private static void LogException(Action? action)

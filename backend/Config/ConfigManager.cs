@@ -165,6 +165,15 @@ public class ConfigManager
         );
     }
 
+    public int GetMaxQueueConnections()
+    {
+        var pool = Math.Max(1, GetUsenetProviderConfig().TotalPooledConnections);
+        var configured = StringUtil.EmptyToNull(GetConfigValue("usenet.max-queue-connections"));
+        if (configured is null || !int.TryParse(configured, out var value))
+            return pool;
+        return Math.Clamp(value, 1, pool);
+    }
+
     public int GetArticleBufferSize()
     {
         return int.Parse(
