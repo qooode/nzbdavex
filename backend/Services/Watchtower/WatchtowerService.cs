@@ -55,13 +55,15 @@ public class WatchtowerService(
                     using var cycleCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                     lock (_ctsLock) _disabledCts = cycleCts;
                     var ct = cycleCts.Token;
+                    var cycleWatch = Stopwatch.StartNew();
+                    LogActivity("Watchtower: cycle starting");
                     try
                     {
                         await SyncDueSourcesAsync(ct).ConfigureAwait(false);
                         await ExpandDueExpandersAsync(ct).ConfigureAwait(false);
                         await ResolveDueItemsAsync(ct).ConfigureAwait(false);
                         await KeepFreshDueItemsAsync(ct).ConfigureAwait(false);
-                        await LogCycleHeartbeatAsync(ct).ConfigureAwait(false);
+                        await LogCycleHeartbeatAsync(cycleWatch, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
                     {
@@ -118,7 +120,7 @@ public class WatchtowerService(
             Log.Debug(exception, template, args);
     }
 
-    private async Task LogCycleHeartbeatAsync(CancellationToken ct)
+    private async Task LogCycleHeartbeatAsync(Stopwatch cycleWatch, CancellationToken ct)
     {
         if (!configManager.IsWatchtowerVerboseLoggingEnabled()) return;
 
@@ -131,7 +133,8 @@ public class WatchtowerService(
         int Get(string state) => counts.GetValueOrDefault(state);
 
         Log.Information(
-            "Watchtower: cycle complete — {Ready} ready, {Scouting} scouting, {Unavailable} unavailable, {Series} series, {Parked} parked",
+            "Watchtower: cycle complete in {Elapsed:n1}s — {Ready} ready, {Scouting} scouting, {Unavailable} unavailable, {Series} series, {Parked} parked",
+            cycleWatch.Elapsed.TotalSeconds,
             Get(WantedItem.StateReady), Get(WantedItem.StateScouting), Get(WantedItem.StateUnavailable),
             Get(WantedItem.StateExpander), Get(WantedItem.StateParked));
     }
@@ -1033,7 +1036,12 @@ public class WatchtowerService(
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(NzbFetchTimeout);
             using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+            {
+                LogActivity("Watchtower: NZB fetch HTTP {Status} from {Indexer} for {Url}",
+                    (int)resp.StatusCode, c.IndexerName, c.NzbUrl);
+                return null;
+            }
             var bytes = await resp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
             _ = hitTracker.RecordAsync(c.IndexerName, IndexerApiHit.HitType.Download, CancellationToken.None);
             return bytes;
