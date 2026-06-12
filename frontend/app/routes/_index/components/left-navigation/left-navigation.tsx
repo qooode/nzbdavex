@@ -14,6 +14,10 @@ export type LeftNavigationProps = {
 export function LeftNavigation({ version, isFrontendAuthDisabled, isWatchdogEnabled }: LeftNavigationProps) {
     return (
         <div className={styles.container}>
+            <Link to="/" className={styles.brand}>
+                <img className={styles["brand-logo"]} src="/logo.png?v=6" alt="davex" />
+                <div className={styles["brand-title"]}>davex</div>
+            </Link>
             <Item target="/overview">
                 <div className={styles["overview-icon"]} />
                 <div className={styles.title}>Overview</div>

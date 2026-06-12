@@ -38,6 +38,12 @@
     border-radius: 8px;
 }
 
+@media (min-width: 900px) {
+    .title-container {
+        display: none;
+    }
+}
+
 /* mobile */
 @media (max-width: calc(899.999px)) {
     .container {
