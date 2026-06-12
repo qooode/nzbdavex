@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NzbWebDAV.Api.Controllers.GetWebdavItem;
@@ -37,7 +38,8 @@ public class ProfilePlayController(
     PreflightSessionRegistry preflightSessions,
     VariantResolver variantResolver,
     WatchtowerStore watchtowerStore,
-    WardenStore wardenStore
+    WardenStore wardenStore,
+    PlayResolutionCoalescer playCoalescer
 ) : ControllerBase
 {
     private static readonly TimeSpan NzbFetchTimeout = TimeSpan.FromSeconds(8);
@@ -108,6 +110,72 @@ public class ProfilePlayController(
             if (waitRedirect is not null) return waitRedirect;
         }
 
+        return await ResolveAndCommitAsync(nzbToken, entry).ConfigureAwait(false);
+    }
+
+    private async Task<IActionResult> ResolveAndCommitAsync(string nzbToken, NzbResolutionCache.Entry entry)
+    {
+        var coalesceKey = VariantResolver.BuildContentGroupKey(entry);
+        PlayResolutionCoalescer.Lease? coalesceLease = null;
+        if (coalesceKey is not null)
+        {
+            coalesceLease = playCoalescer.Acquire(coalesceKey);
+            if (!coalesceLease.IsLeader)
+            {
+                var followed = await FollowResolvedLeaderAsync(coalesceLease, entry, HttpContext.RequestAborted)
+                    .ConfigureAwait(false);
+                if (followed is not null) return followed;
+                coalesceLease = null;
+            }
+        }
+
+        var resolvedNzoId = new StrongBox<Guid?>(null);
+        try
+        {
+            return await ResolveLeaderBodyAsync(nzbToken, entry, resolvedNzoId).ConfigureAwait(false);
+        }
+        finally
+        {
+            coalesceLease?.Publish(resolvedNzoId.Value);
+        }
+    }
+
+    private async Task<IActionResult?> FollowResolvedLeaderAsync(
+        PlayResolutionCoalescer.Lease lease, NzbResolutionCache.Entry entry, CancellationToken ct)
+    {
+        Guid? nzoId;
+        try
+        {
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitCts.CancelAfter(TimeSpan.FromSeconds(configManager.GetPlayTotalBudgetSeconds()));
+            nzoId = await lease.WaitAsync(waitCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        if (nzoId is { } id)
+        {
+            var redirect = await WaitForInFlightAsync(id, entry, ct).ConfigureAwait(false);
+            if (redirect is not null) return redirect;
+        }
+
+        var existing = await TryResolveExistingAsync(entry, ct).ConfigureAwait(false);
+        if (existing is not null) return existing;
+
+        var inflight = variantResolver.IsEnabled
+            ? await variantResolver.FindInFlightAsync(dbClient.Ctx, entry, ct).ConfigureAwait(false)
+            : await FindInFlightQueueItemAsync(entry, ct).ConfigureAwait(false);
+        if (inflight is { } q)
+            return await WaitForInFlightAsync(q, entry, ct).ConfigureAwait(false);
+
+        return null;
+    }
+
+    private async Task<IActionResult> ResolveLeaderBodyAsync(
+        string nzbToken, NzbResolutionCache.Entry entry, StrongBox<Guid?> resolvedNzoId)
+    {
         var totalBudget = TimeSpan.FromSeconds(configManager.GetPlayTotalBudgetSeconds());
         var hedgeDelay = TimeSpan.FromSeconds(configManager.GetPlayHedgeDelaySeconds());
         var maxCandidates = configManager.GetPlayMaxCandidates();
@@ -145,6 +213,7 @@ public class ProfilePlayController(
             RecordAttempt(clickId, entry.Primary, contentType, requestedTitle, 0,
                 MapCommitReason(reason), CommitReasonToMessage(reason), startsAt, isWinner: reason == CommitReason.Completed,
                 contentGroupKey: contentGroupKey);
+            if (reason == CommitReason.Completed) resolvedNzoId.Value = newNzoId;
             if (reason == CommitReason.BudgetTimeout && newNzoId.HasValue)
                 ScheduleOrphanCleanup(newNzoId.Value);
             if (result is not null) return result;
@@ -219,6 +288,7 @@ public class ProfilePlayController(
             {
                 case BatchOutcome.Winner:
                 case BatchOutcome.Cancelled:
+                    resolvedNzoId.Value = batch.WinnerNzoId;
                     return batch.Action!;
                 case BatchOutcome.BudgetTimeout:
                     return await ResolveExistingOrErrorAsync(entry, 503,
@@ -264,7 +334,7 @@ public class ProfilePlayController(
 
     private enum BatchOutcome { Winner, AllFailed, Cancelled, BudgetTimeout }
 
-    private async Task<(BatchOutcome Outcome, IActionResult? Action)> RunBatchAsync(
+    private async Task<(BatchOutcome Outcome, IActionResult? Action, Guid? WinnerNzoId)> RunBatchAsync(
         List<NzbResolutionCache.Candidate> pool,
         Dictionary<string, int> rankIndex,
         string nzbToken,
@@ -368,7 +438,7 @@ public class ProfilePlayController(
                         rankIndex, startsAt, remaining, taskCandidates, ready, totalCts,
                         "Winner found; loser cancelled to free provider connections",
                         contentGroupKey);
-                    return (BatchOutcome.Winner, action);
+                    return (BatchOutcome.Winner, action, newNzoId);
                 }
                 if (reason == CommitReason.QueueFailed || reason == CommitReason.EnqueueFailed)
                     negativeCache.MarkFailed(best.Candidate.NzbUrl);
@@ -378,7 +448,7 @@ public class ProfilePlayController(
                         rankIndex, startsAt, remaining, taskCandidates, ready, totalCts,
                         "Client disconnected; loser cancelled",
                         contentGroupKey);
-                    return (BatchOutcome.Cancelled, new EmptyResult());
+                    return (BatchOutcome.Cancelled, new EmptyResult(), null);
                 }
                 if (reason == CommitReason.BudgetTimeout)
                 {
@@ -391,7 +461,7 @@ public class ProfilePlayController(
                         contentGroupKey);
                     // HandleAsync converts this to a 503 + Retry-After (or a 302 if
                     // another click finished the same group in the meantime).
-                    return (BatchOutcome.BudgetTimeout, null);
+                    return (BatchOutcome.BudgetTimeout, null, null);
                 }
                 continue;
             }
@@ -409,7 +479,7 @@ public class ProfilePlayController(
             rankIndex, startsAt, remaining, taskCandidates, ready, totalCts,
             "Batch exited without a winner; remaining verifies cancelled",
             contentGroupKey);
-        return (BatchOutcome.AllFailed, null);
+        return (BatchOutcome.AllFailed, null, null);
     }
 
     // Signal in-flight pre-verify tasks to abort (freeing indexer/NNTP connections),

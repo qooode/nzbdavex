@@ -120,6 +120,7 @@ class Program
             .AddSingleton<QueueManager>()
             .AddSingleton<NzbResolutionCache>()
             .AddSingleton<NzbFetchCoalescer>()
+            .AddSingleton<PlayResolutionCoalescer>()
             .AddSingleton<CandidateNegativeCache>()
             .AddSingleton<WardenStore>()
             .AddSingleton<WardenRemoteSourceService>()
