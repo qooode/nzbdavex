@@ -359,6 +359,19 @@ export function WatchtowerSettings({ config, setNewConfig }: WatchtowerSettingsP
                 </p>
             </Form.Group>
 
+            <Form.Group className={styles.section}>
+                <Form.Label>Verify timeout (seconds)</Form.Label>
+                <Form.Control className={styles.input} type="number" min={2} max={120}
+                    disabled={!enabled}
+                    value={config["watchtower.verify-timeout-seconds"] ?? "10"}
+                    onChange={e => set("watchtower.verify-timeout-seconds", e.target.value)} />
+                <p className={styles.hint}>
+                    Max time a single segment check may run before it's treated as a timeout and its
+                    Usenet connection is released. Guards against unresponsive providers stalling the
+                    engine. Default 10.
+                </p>
+            </Form.Group>
+
             <div className={styles.section}>
                 <div className={styles.sectionTitle}>Re-check &amp; retry timing</div>
                 <div className={styles.sectionDescription}>
@@ -462,6 +475,7 @@ export function isWatchtowerSettingsUpdated(config: Record<string, string>, newC
         "watchtower.season-bundle-fallback-max-episodes",
         "watchtower.min-grabs",
         "watchtower.verify-sample-count",
+        "watchtower.verify-timeout-seconds",
         "watchtower.keepfresh-base-seconds",
         "watchtower.keepfresh-max-seconds",
         "watchtower.unavailable-retry-seconds",

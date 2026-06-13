@@ -8,6 +8,8 @@ namespace NzbWebDAV.Services;
 
 public class PlaybackFastVerifier
 {
+    private static readonly TimeSpan DefaultSegmentTimeout = TimeSpan.FromSeconds(15);
+
     private readonly UsenetStreamingClient _usenetClient;
 
     public PlaybackFastVerifier(UsenetStreamingClient usenetClient)
@@ -15,7 +17,8 @@ public class PlaybackFastVerifier
         _usenetClient = usenetClient;
     }
 
-    public async Task<VerifyOutcome> VerifyAsync(Stream nzbStream, string mode, int sampleCount, CancellationToken ct)
+    public async Task<VerifyOutcome> VerifyAsync(
+        Stream nzbStream, string mode, int sampleCount, CancellationToken ct, TimeSpan? segmentTimeout = null)
     {
         if (mode == "none") return new VerifyOutcome(Verdict.Available, null);
 
@@ -36,7 +39,8 @@ public class PlaybackFastVerifier
         var attribution = new MultiProviderNntpClient.ResponderAttribution();
         MultiProviderNntpClient.AttributionContext.Value = attribution;
 
-        var tasks = samples.Select(s => CheckSegmentAsync(s, mode, ct)).ToList();
+        var timeout = segmentTimeout ?? DefaultSegmentTimeout;
+        var tasks = samples.Select(s => CheckSegmentAsync(s, mode, timeout, ct)).ToList();
         Verdict[] results;
         try
         {
@@ -54,27 +58,34 @@ public class PlaybackFastVerifier
         return new VerifyOutcome(Verdict.Available, attribution.Host);
     }
 
-    private async Task<Verdict> CheckSegmentAsync(string messageId, string mode, CancellationToken ct)
+    private async Task<Verdict> CheckSegmentAsync(string messageId, string mode, TimeSpan timeout, CancellationToken ct)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
         try
         {
             if (mode == "body")
             {
-                var resp = await _usenetClient.DecodedBodyAsync(messageId, ct).ConfigureAwait(false);
+                var resp = await _usenetClient.DecodedBodyAsync(messageId, timeoutCts.Token).ConfigureAwait(false);
                 return resp.ResponseType == UsenetResponseType.ArticleRetrievedBodyFollows
                     ? Verdict.Available
                     : Verdict.Dead;
             }
             else
             {
-                var resp = await _usenetClient.StatAsync(messageId, ct).ConfigureAwait(false);
+                var resp = await _usenetClient.StatAsync(messageId, timeoutCts.Token).ConfigureAwait(false);
                 return resp.ResponseType == UsenetResponseType.ArticleExists
                     ? Verdict.Available
                     : Verdict.Dead;
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (OperationCanceledException)
         {
+            Log.Debug("Fast-verify timed out after {Timeout:n0}s on {Segment}", timeout.TotalSeconds, messageId);
             return Verdict.Timeout;
         }
         catch (Exception e) when (!e.IsCancellationException())

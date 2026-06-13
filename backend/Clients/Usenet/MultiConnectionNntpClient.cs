@@ -193,10 +193,7 @@ public class MultiConnectionNntpClient(
             }
             catch (Exception e) when (e.IsCancellationException())
             {
-                // cancelled BODY/ARTICLE leaves unread response bytes on the socket;
-                // pooling would poison the next request with a misparsed 'not found'.
-                if (name is "BODY" or "ARTICLE")
-                    LogException(() => connectionLock?.Replace());
+                LogException(() => connectionLock?.Replace());
                 LogException(() => connectionLock?.Dispose());
                 LogException(() => onConnectionReadyAgain?.Invoke(ArticleBodyResult.NotRetrieved));
                 throw;

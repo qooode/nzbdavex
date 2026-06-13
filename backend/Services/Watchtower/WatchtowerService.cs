@@ -762,7 +762,9 @@ public class WatchtowerService(
 
             PlaybackFastVerifier.VerifyOutcome outcome;
             using (var ms = new MemoryStream(bytes, writable: false))
-                outcome = await fastVerifier.VerifyAsync(ms, "stat", sample, ct).ConfigureAwait(false);
+                outcome = await fastVerifier
+                    .VerifyAsync(ms, "stat", sample, ct, VerifyTimeout)
+                    .ConfigureAwait(false);
 
             if (outcome.Verdict == PlaybackFastVerifier.Verdict.Dead)
             {
@@ -933,7 +935,9 @@ public class WatchtowerService(
 
         PlaybackFastVerifier.VerifyOutcome outcome;
         using (var ms = new MemoryStream(item.WinnerNzb, writable: false))
-            outcome = await fastVerifier.VerifyAsync(ms, "stat", sample, ct).ConfigureAwait(false);
+            outcome = await fastVerifier
+                .VerifyAsync(ms, "stat", sample, ct, VerifyTimeout)
+                .ConfigureAwait(false);
 
         if (outcome.Verdict == PlaybackFastVerifier.Verdict.Available)
         {
@@ -976,7 +980,9 @@ public class WatchtowerService(
 
             PlaybackFastVerifier.VerifyOutcome outcome;
             using (var ms = new MemoryStream(bytes, writable: false))
-                outcome = await fastVerifier.VerifyAsync(ms, "stat", sample, ct).ConfigureAwait(false);
+                outcome = await fastVerifier
+                    .VerifyAsync(ms, "stat", sample, ct, VerifyTimeout)
+                    .ConfigureAwait(false);
 
             if (outcome.Verdict == PlaybackFastVerifier.Verdict.Available)
             {
@@ -1095,6 +1101,9 @@ public class WatchtowerService(
             _resolvesToday = 0;
         }
     }
+
+    private TimeSpan VerifyTimeout =>
+        TimeSpan.FromSeconds(configManager.GetWatchtowerVerifyTimeoutSeconds());
 
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 }

@@ -485,6 +485,13 @@ public class ConfigManager
         return int.TryParse(v, out var n) ? Math.Clamp(n, 1, 20) : 3;
     }
 
+    public int GetWatchtowerVerifyTimeoutSeconds()
+    {
+        var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.verify-timeout-seconds"));
+        if (v == null) return 10;
+        return int.TryParse(v, out var n) ? Math.Clamp(n, 2, 120) : 10;
+    }
+
     public int GetWatchtowerActiveSetCap()
     {
         var v = StringUtil.EmptyToNull(GetConfigValue("watchtower.active-set-cap"));
