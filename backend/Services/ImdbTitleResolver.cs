@@ -51,7 +51,11 @@ public class ImdbTitleResolver
         if (url is null) return null;
 
         using var resp = await HttpClient.GetAsync(url, ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode) return null;
+        if (!resp.IsSuccessStatusCode)
+        {
+            LogStatus("tvmaze", (int)resp.StatusCode, imdbDigits is not null ? $"tt{imdbDigits}" : $"tvdb{tvdbId}");
+            return null;
+        }
         await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
         if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
@@ -68,13 +72,25 @@ public class ImdbTitleResolver
         req.Headers.Accept.ParseAdd("application/sparql-results+json");
         req.Headers.UserAgent.ParseAdd("NzbDav (https://github.com/nzbdav-dev/nzbdav)");
         using var resp = await HttpClient.SendAsync(req, ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode) return null;
+        if (!resp.IsSuccessStatusCode)
+        {
+            LogStatus("wikidata", (int)resp.StatusCode, $"tt{imdbDigits}");
+            return null;
+        }
         await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
         var bindings = doc.RootElement.GetProperty("results").GetProperty("bindings");
         if (bindings.GetArrayLength() == 0) return null;
         var label = bindings[0].GetProperty("label").GetProperty("value").GetString();
         return string.IsNullOrWhiteSpace(label) ? null : label;
+    }
+
+    private static void LogStatus(string source, int status, string id)
+    {
+        if (status == 429 || status >= 500)
+            Log.Warning("ImdbTitleResolver: {Source} returned HTTP {Status} for {Id} — rate-limited or unavailable", source, status, id);
+        else
+            Log.Debug("ImdbTitleResolver: {Source} returned HTTP {Status} for {Id}", source, status, id);
     }
 
     private sealed record CacheEntry(string? Title, DateTimeOffset ExpiresAt);

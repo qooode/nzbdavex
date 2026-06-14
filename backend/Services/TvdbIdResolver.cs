@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using Serilog;
 
 namespace NzbWebDAV.Services;
 
@@ -29,6 +30,11 @@ public class TvdbIdResolver
             tvdb = await TryTvmazeByTitleAsync(title, year, ct).ConfigureAwait(false);
         }
 
+        if (tvdb is null)
+            Log.Information("TvdbResolver: no tvdb id for tt{Imdb}; TV search will fall back to imdbid", imdbDigits);
+        else
+            Log.Information("TvdbResolver: resolved tt{Imdb} to tvdb {Tvdb}", imdbDigits, tvdb);
+
         _cache[imdbDigits] = new CacheEntry(tvdb, DateTimeOffset.UtcNow.Add(tvdb is null ? NegativeTtl : CacheTtl));
         return tvdb;
     }
@@ -39,18 +45,27 @@ public class TvdbIdResolver
         {
             var url = $"https://api.tvmaze.com/lookup/shows?imdb=tt{imdbDigits}";
             using var resp = await HttpClient.GetAsync(url, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+            {
+                LogStatus("tvmaze", (int)resp.StatusCode, $"tt{imdbDigits}");
+                return null;
+            }
             await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
             if (!doc.RootElement.TryGetProperty("externals", out var externals)) return null;
             if (!externals.TryGetProperty("thetvdb", out var tvdbElement)) return null;
             if (tvdbElement.ValueKind == JsonValueKind.Number && tvdbElement.TryGetInt32(out var tvdbId))
+            {
+                Log.Debug("TvdbResolver: tvmaze mapped tt{Imdb} to tvdb {Tvdb}", imdbDigits, tvdbId);
                 return tvdbId;
+            }
             return null;
         }
-        catch
+        catch (Exception e)
         {
+            if (!ct.IsCancellationRequested)
+                Log.Debug("TvdbResolver: tvmaze lookup failed for tt{Imdb}: {Message}", imdbDigits, e.Message);
             return null;
         }
     }
@@ -65,16 +80,27 @@ public class TvdbIdResolver
             req.Headers.Accept.ParseAdd("application/sparql-results+json");
             req.Headers.UserAgent.ParseAdd("NzbDav (https://github.com/nzbdav-dev/nzbdav)");
             using var resp = await HttpClient.SendAsync(req, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+            {
+                LogStatus("wikidata", (int)resp.StatusCode, $"tt{imdbDigits}");
+                return null;
+            }
             await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             var bindings = doc.RootElement.GetProperty("results").GetProperty("bindings");
             if (bindings.GetArrayLength() == 0) return null;
             var tvdbStr = bindings[0].GetProperty("tvdb").GetProperty("value").GetString();
-            return int.TryParse(tvdbStr, out var tvdbId) ? tvdbId : null;
+            if (int.TryParse(tvdbStr, out var tvdbId))
+            {
+                Log.Debug("TvdbResolver: wikidata mapped tt{Imdb} to tvdb {Tvdb}", imdbDigits, tvdbId);
+                return tvdbId;
+            }
+            return null;
         }
-        catch
+        catch (Exception e)
         {
+            if (!ct.IsCancellationRequested)
+                Log.Debug("TvdbResolver: wikidata lookup failed for tt{Imdb}: {Message}", imdbDigits, e.Message);
             return null;
         }
     }
@@ -91,7 +117,11 @@ public class TvdbIdResolver
         {
             var url = $"https://api.tvmaze.com/singlesearch/shows?q={Uri.EscapeDataString(title)}";
             using var resp = await HttpClient.GetAsync(url, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+            {
+                LogStatus("tvmaze-title", (int)resp.StatusCode, title);
+                return null;
+            }
             await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             var root = doc.RootElement;
@@ -113,11 +143,16 @@ public class TvdbIdResolver
             if (!root.TryGetProperty("externals", out var externals)) return null;
             if (!externals.TryGetProperty("thetvdb", out var tvdbElement)) return null;
             if (tvdbElement.ValueKind == JsonValueKind.Number && tvdbElement.TryGetInt32(out var tvdbId))
+            {
+                Log.Debug("TvdbResolver: tvmaze title search mapped {Title} to tvdb {Tvdb}", title, tvdbId);
                 return tvdbId;
+            }
             return null;
         }
-        catch
+        catch (Exception e)
         {
+            if (!ct.IsCancellationRequested)
+                Log.Debug("TvdbResolver: tvmaze title search failed for {Title}: {Message}", title, e.Message);
             return null;
         }
     }
@@ -138,7 +173,11 @@ public class TvdbIdResolver
             req.Headers.Accept.ParseAdd("application/sparql-results+json");
             req.Headers.UserAgent.ParseAdd("NzbDav (https://github.com/nzbdav-dev/nzbdav)");
             using var resp = await HttpClient.SendAsync(req, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return (null, null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                LogStatus("wikidata-title", (int)resp.StatusCode, $"tt{imdbDigits}");
+                return (null, null);
+            }
             await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             var bindings = doc.RootElement.GetProperty("results").GetProperty("bindings");
@@ -155,10 +194,20 @@ public class TvdbIdResolver
             }
             return (string.IsNullOrWhiteSpace(title) ? null : title, year);
         }
-        catch
+        catch (Exception e)
         {
+            if (!ct.IsCancellationRequested)
+                Log.Debug("TvdbResolver: wikidata title lookup failed for tt{Imdb}: {Message}", imdbDigits, e.Message);
             return (null, null);
         }
+    }
+
+    private static void LogStatus(string source, int status, string id)
+    {
+        if (status == 429 || status >= 500)
+            Log.Warning("TvdbResolver: {Source} returned HTTP {Status} for {Id} — rate-limited or unavailable", source, status, id);
+        else
+            Log.Debug("TvdbResolver: {Source} returned HTTP {Status} for {Id}", source, status, id);
     }
 
     private static bool NamesEqual(string? a, string? b)
