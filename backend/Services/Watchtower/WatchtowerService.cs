@@ -601,15 +601,18 @@ public class WatchtowerService(
     private Dictionary<string, DesiredRow> ClampSeries(Dictionary<string, DesiredRow> desired)
     {
         var cap = configManager.GetWatchtowerSeriesMaxEpisodes();
-        if (cap <= 0 || desired.Count <= cap) return desired;
+        if (cap <= 0) return desired;
+
+        var episodes = desired.Where(kv => kv.Value.Type != "season").ToList();
+        if (episodes.Count <= cap) return desired;
+
         var keepOldest = configManager.GetWatchtowerSeriesCapKeep() == "oldest";
-
-        IEnumerable<KeyValuePair<string, DesiredRow>> Ordered(IEnumerable<KeyValuePair<string, DesiredRow>> src) =>
-            keepOldest ? src.OrderBy(kv => RowOrder(kv.Value)) : src.OrderByDescending(kv => RowOrder(kv.Value));
-
-        var bundles = Ordered(desired.Where(kv => kv.Value.Type == "season"));
-        var episodes = Ordered(desired.Where(kv => kv.Value.Type != "season"));
-        return bundles.Concat(episodes).Take(cap).ToDictionary(kv => kv.Key, kv => kv.Value);
+        var keptEpisodes = (keepOldest
+                ? episodes.OrderBy(kv => RowOrder(kv.Value))
+                : episodes.OrderByDescending(kv => RowOrder(kv.Value)))
+            .Take(cap);
+        var bundles = desired.Where(kv => kv.Value.Type == "season");
+        return bundles.Concat(keptEpisodes).ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 
     private static (int Season, int Number) RowOrder(DesiredRow row)
