@@ -49,10 +49,14 @@ public class GetHistoryController(
 
         // get slots (in-memory provider counts only survive until app restart)
         var providerUsages = providerUsageTracker.SnapshotMany(historyItems.Select(x => x.Id));
-        var nicknamesByHost = configManager.GetUsenetProviderConfig().Providers
+        var configuredProviders = configManager.GetUsenetProviderConfig().Providers;
+        var displayHostsByProviderKey = configuredProviders
+            .GroupBy(p => p.ProviderKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Host, StringComparer.Ordinal);
+        var nicknamesByProviderKey = configuredProviders
             .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
-            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(p => p.ProviderKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.Ordinal);
         var slots = historyItems
             .Select(x =>
                 GetHistoryResponse.HistorySlot.FromHistoryItem(
@@ -60,7 +64,8 @@ public class GetHistoryController(
                     x.DownloadDirId != null ? davItemsDict.GetValueOrDefault(x.DownloadDirId.Value) : null,
                     configManager,
                     providerUsages.GetValueOrDefault(x.Id),
-                    nicknamesByHost
+                    nicknamesByProviderKey,
+                    displayHostsByProviderKey
                 )
             )
             .ToList();

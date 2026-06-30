@@ -32,12 +32,14 @@ public class MultiConnectionNntpClient(
     long? byteLimit,
     long bytesUsedOffset,
     int priority,
-    int? pipeliningDepth = null
+    int? pipeliningDepth = null,
+    string? providerKey = null
 ) : NntpClient
 {
     public ProviderType ProviderType { get; } = type;
     public int Priority { get; } = priority;
     public string Host { get; } = host;
+    public string ProviderKey { get; } = string.IsNullOrWhiteSpace(providerKey) ? host : providerKey;
 
     public int? ConfiguredPipeliningDepth { get; } = pipeliningDepth;
     // null or non-positive = uncapped. Routing reads these to decide whether

@@ -20,12 +20,12 @@ public class ProviderUsageTracker(ActiveReadRegistry? activeReadRegistry = null)
         return new Releaser(() => CurrentScope.Value = previous);
     }
 
-    public void RecordSuccess(string providerHost)
+    public void RecordSuccess(string provider)
     {
         var qid = CurrentScope.Value;
-        if (qid == null || string.IsNullOrEmpty(providerHost)) return;
+        if (qid == null || string.IsNullOrEmpty(provider)) return;
         var counts = _usage.GetOrAdd(qid.Value, _ => new ConcurrentDictionary<string, long>());
-        counts.AddOrUpdate(providerHost, 1, (_, v) => v + 1);
+        counts.AddOrUpdate(provider, 1, (_, v) => v + 1);
         // Keep the active-read entry alive while NNTP fetches are flowing for
         // this scope. No-op when the scope id isn't a registered read session.
         activeReadRegistry?.Touch(qid.Value, 0);

@@ -30,18 +30,21 @@ public class GetQueueController(
             .Where(x => x.Id != inProgressQueueItem?.Id)
             .ToArray();
 
-        // hosts of every configured Usenet provider — used to show idle providers
+        // provider keys of every configured Usenet provider — used to show idle providers
         // alongside active ones for the in-progress download
         var configuredProviders = configManager.GetUsenetProviderConfig().Providers;
-        var configuredHosts = configuredProviders
-            .Select(p => p.Host)
+        var configuredProviderKeys = configuredProviders
+            .Select(p => p.ProviderKey)
             .Where(h => !string.IsNullOrEmpty(h))
             .Distinct()
             .ToList();
-        var nicknamesByHost = configuredProviders
+        var displayHostsByProviderKey = configuredProviders
+            .GroupBy(p => p.ProviderKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Host, StringComparer.Ordinal);
+        var nicknamesByProviderKey = configuredProviders
             .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
-            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(p => p.ProviderKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.Ordinal);
 
         // get slots
         var slots = queueItems
@@ -53,14 +56,15 @@ public class GetQueueController(
                 var percentage = (isInProgress ? progressPercentage : 0)!.Value;
                 var status = isInProgress ? "Downloading" : "Queued";
                 var providerUsage = providerUsageTracker.Snapshot(queueItem!.Id);
-                if (isInProgress && configuredHosts.Count > 0)
+                if (isInProgress && configuredProviderKeys.Count > 0)
                 {
                     var merged = new Dictionary<string, long>();
-                    foreach (var host in configuredHosts) merged[host] = 0;
+                    foreach (var providerKey in configuredProviderKeys) merged[providerKey] = 0;
                     foreach (var kv in providerUsage) merged[kv.Key] = kv.Value;
                     providerUsage = merged;
                 }
-                return GetQueueResponse.QueueSlot.FromQueueItem(queueItem!, index, percentage, status, providerUsage, nicknamesByHost);
+                return GetQueueResponse.QueueSlot.FromQueueItem(
+                    queueItem!, index, percentage, status, providerUsage, nicknamesByProviderKey, displayHostsByProviderKey);
             })
             .ToList();
 

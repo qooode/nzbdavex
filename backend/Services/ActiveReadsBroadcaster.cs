@@ -82,10 +82,9 @@ public class ActiveReadsBroadcaster(
         if (entries.Count == 0 && _wasEmpty) return;
 
         var usage = usageTracker.SnapshotMany(entries.Select(e => e.Id));
-        var nicknamesByHost = configManager.GetUsenetProviderConfig().Providers
-            .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
-            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
+        var providersByKey = configManager.GetUsenetProviderConfig().Providers
+            .GroupBy(p => p.ProviderKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var snapshot = new
         {
             reads = entries.Select(e => new
@@ -99,11 +98,15 @@ public class ActiveReadsBroadcaster(
                 currentOffset = Interlocked.Read(ref e.CurrentOffset),
                 fileSize = e.FileSize,
                 providers = (usage.GetValueOrDefault(e.Id) ?? new Dictionary<string, long>())
-                    .Select(kv => new
+                    .Select(kv =>
                     {
-                        host = kv.Key,
-                        nickname = nicknamesByHost.GetValueOrDefault(kv.Key),
-                        segments = kv.Value,
+                        providersByKey.TryGetValue(kv.Key, out var provider);
+                        return new
+                        {
+                            host = provider?.Host ?? kv.Key,
+                            nickname = provider?.Nickname,
+                            segments = kv.Value,
+                        };
                     })
                     .OrderByDescending(p => p.segments)
                     .ToList()

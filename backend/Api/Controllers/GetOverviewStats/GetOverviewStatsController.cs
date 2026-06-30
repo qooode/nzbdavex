@@ -45,9 +45,14 @@ public class GetOverviewStatsController(
             ? 0
             : nowMs - windowMs;
 
-        var nicknamesByHost = configManager.GetUsenetProviderConfig().Providers
+        var nicknamesByProvider = configManager.GetUsenetProviderConfig().Providers
             .Where(p => !string.IsNullOrWhiteSpace(p.Nickname))
-            .GroupBy(p => p.Host, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(p => new[]
+            {
+                (Key: p.ProviderKey, p.Nickname),
+                (Key: p.Host, p.Nickname),
+            })
+            .GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Nickname, StringComparer.OrdinalIgnoreCase);
 
         await using var metrics = new MetricsDbContext();
@@ -94,7 +99,7 @@ public class GetOverviewStatsController(
 
             liveTiles = BuildLiveTiles(articlesLastMinute: 0, errorsLastMinute: 0);
             throughput = BuildThroughputFromHourly(hours.Select(h => (h.Hour, h.Articles, h.Errors, h.BytesFetched)), sessions.Select(s => (s.EndedAt, s.BytesServed)), bucketSize);
-            providers = BuildProvidersFromHourly(hours, windowStart, bucketSize, nowMs, nicknamesByHost);
+            providers = BuildProvidersFromHourly(hours, windowStart, bucketSize, nowMs, nicknamesByProvider);
             latency = new GetOverviewStatsResponse.LatencyBlock();
             errors = new List<GetOverviewStatsResponse.ErrorSlice>();
             totalArticles = hours.Sum(h => h.Articles);
@@ -107,7 +112,7 @@ public class GetOverviewStatsController(
             failover = BuildFailover(
                 hours.Where(h => h.FailoverSaves > 0).Select(h => (h.Hour, h.Provider, h.FailoverSaves)),
                 failoverEdges.Select(e => (e.FromProvider, e.Reason, e.Count)),
-                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByHost);
+                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByProvider);
         }
         else
         {
@@ -129,7 +134,7 @@ public class GetOverviewStatsController(
 
             liveTiles = BuildLiveTiles(articlesLastMinute, errorsLastMinute);
             throughput = BuildThroughput(fetches.Select(f => (f.At, f.Status)), sessions.Select(s => (s.EndedAt, s.BytesServed)), bucketSize);
-            providers = BuildProviders(fetches, perMinuteBytes, windowStart, bucketSize, window, nicknamesByHost);
+            providers = BuildProviders(fetches, perMinuteBytes, windowStart, bucketSize, window, nicknamesByProvider);
             latency = BuildLatency(fetches.Where(f => f.Status == SegmentFetch.FetchStatus.Ok).Select(f => f.DurationMs));
             errors = BuildErrors(fetches.Select(f => f.Status));
             totalArticles = throughput.Sum(p => p.Articles);
@@ -143,7 +148,7 @@ public class GetOverviewStatsController(
                 fetches.Where(f => f.Status == SegmentFetch.FetchStatus.Ok && f.Retries > 0)
                     .Select(f => (f.At, f.Provider, 1L)),
                 failoverEdges.Select(e => (e.FromProvider, e.Reason, 1L)),
-                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByHost);
+                totalArticles, sessions.Count, readsSaved, previousSaves, failoverBucket, nicknamesByProvider);
         }
 
         var catalogue = await BuildCatalogueAsync().ConfigureAwait(false);

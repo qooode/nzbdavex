@@ -10,6 +10,7 @@ public class GetProviderUsageResponse : BaseApiResponse
         // the lifetime of one settings page render — same key the UI uses for
         // edit/delete actions, so the frontend can join without an extra ID.
         public int Index { get; set; }
+        public string ProviderKey { get; set; } = string.Empty;
         public string Host { get; set; } = string.Empty;
         public string? Nickname { get; set; }
         public long BytesUsed { get; set; }

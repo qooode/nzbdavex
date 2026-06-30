@@ -42,5 +42,13 @@ public class UsenetProviderConfig
         // the live counter. A reset bumps this to "now" so the gauge starts fresh
         // without losing the historical metrics rows underneath.
         public long BytesUsedResetAt { get; set; }
+
+        // Runtime identity for usage accounting and provider scoring. Host stays
+        // the NNTP target/display field; this separates multiple accounts on the
+        // same host without storing passwords in metrics keys.
+        public string ProviderKey => BuildProviderKey(Host, Port, User);
+
+        public static string BuildProviderKey(string host, int port, string user) =>
+            $"{(host ?? string.Empty).Trim().ToLowerInvariant()}::{port}::{(user ?? string.Empty).Trim()}";
     }
 }

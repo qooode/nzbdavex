@@ -70,7 +70,8 @@ public class GetQueueResponse : SabBaseResponse
             int progressPercentage = 0,
             string status = "Queued",
             IReadOnlyDictionary<string, long>? providerUsage = null,
-            IReadOnlyDictionary<string, string?>? nicknamesByHost = null
+            IReadOnlyDictionary<string, string?>? nicknamesByHost = null,
+            IReadOnlyDictionary<string, string>? displayHostsByProviderKey = null
         )
         {
             return new QueueSlot
@@ -92,7 +93,9 @@ public class GetQueueResponse : SabBaseResponse
                         .OrderByDescending(kv => kv.Value)
                         .Select(kv => new ProviderUsage
                         {
-                            Host = kv.Key,
+                            Host = displayHostsByProviderKey is not null && displayHostsByProviderKey.TryGetValue(kv.Key, out var host)
+                                ? host
+                                : kv.Key,
                             Nickname = nicknamesByHost is not null && nicknamesByHost.TryGetValue(kv.Key, out var n) ? n : null,
                             Segments = kv.Value,
                         })
