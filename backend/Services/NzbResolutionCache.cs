@@ -36,6 +36,14 @@ public class NzbResolutionCache
 
     public Entry? Get(string token) => _entries.TryGetValue(token, out var e) ? e : null;
 
+    public Entry? GetForProfile(string token, string profileToken)
+    {
+        var entry = Get(token);
+        return entry is not null && string.Equals(entry.ProfileToken, profileToken, StringComparison.Ordinal)
+            ? entry
+            : null;
+    }
+
     private void Cleanup()
     {
         var cutoff = DateTime.UtcNow - Ttl;

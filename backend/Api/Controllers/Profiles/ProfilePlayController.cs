@@ -75,6 +75,8 @@ public class ProfilePlayController(
 
         var entry = cache.Get(nzbToken);
         if (entry is null) return NotFound("Link expired. Re-search in your client.");
+        entry = cache.GetForProfile(nzbToken, token);
+        if (entry is null) return NotFound();
 
         if (configManager.IsWatchtowerEnabled())
             await watchtowerStore.TryWarmCacheAsync(entry.Type, entry.Id, HttpContext.RequestAborted).ConfigureAwait(false);
