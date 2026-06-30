@@ -10,16 +10,22 @@ public class UnbufferedMultiSegmentStream : FastReadOnlyNonSeekableStream
     private readonly Memory<string> _segmentIds;
     private readonly INntpClient _usenetClient;
     private readonly long _expectedSegmentSize;
+    private readonly bool _failFastOnFirstSegment;
     private Stream? _stream;
     private int _currentIndex;
     private bool _disposed;
 
 
-    public UnbufferedMultiSegmentStream(Memory<string> segmentIds, INntpClient usenetClient, long expectedSegmentSize)
+    public UnbufferedMultiSegmentStream(
+        Memory<string> segmentIds,
+        INntpClient usenetClient,
+        long expectedSegmentSize,
+        bool failFastOnFirstSegment)
     {
         _segmentIds = segmentIds;
         _usenetClient = usenetClient;
         _expectedSegmentSize = expectedSegmentSize;
+        _failFastOnFirstSegment = failFastOnFirstSegment;
     }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
@@ -32,6 +38,7 @@ public class UnbufferedMultiSegmentStream : FastReadOnlyNonSeekableStream
             if (_stream == null)
             {
                 if (_currentIndex >= _segmentIds.Length) return 0;
+                var isFirstSegment = _currentIndex == 0;
                 var segmentId = _segmentIds.Span[_currentIndex++];
                 try
                 {
@@ -40,6 +47,13 @@ public class UnbufferedMultiSegmentStream : FastReadOnlyNonSeekableStream
                 }
                 catch (UsenetArticleNotFoundException e)
                 {
+                    if (_failFastOnFirstSegment && isFirstSegment)
+                    {
+                        Log.Warning(e, "First article {SegmentId} missing on all providers at playback start. " +
+                                       "Failing the stream so the player surfaces an error.", segmentId);
+                        throw;
+                    }
+
                     var fill = _expectedSegmentSize > 0 ? _expectedSegmentSize : 1;
                     Log.Warning(
                         "Article {SegmentId} missing on all providers. Zero-filling {Bytes} bytes to keep playback alive.",

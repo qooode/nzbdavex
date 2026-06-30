@@ -17,7 +17,7 @@ public class MultipartFileStream(MultipartFile multipartFile, INntpClient usenet
     public override long Position
     {
         get => _position;
-        set => throw new NotSupportedException();
+        set => Seek(value, SeekOrigin.Begin);
     }
 
     public override int Read(byte[] buffer, int offset, int count)
@@ -64,9 +64,7 @@ public class MultipartFileStream(MultipartFile multipartFile, INntpClient usenet
 
     public override long Seek(long offset, SeekOrigin origin)
     {
-        var absoluteOffset = origin == SeekOrigin.Begin ? offset
-            : origin == SeekOrigin.Current ? _position + offset
-            : throw new InvalidOperationException("SeekOrigin must be Begin or Current.");
+        var absoluteOffset = StreamSeek.Resolve(_position, Length, offset, origin);
         if (_position == absoluteOffset) return _position;
         _position = absoluteOffset;
         _currentStream?.Dispose();

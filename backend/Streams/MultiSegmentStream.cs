@@ -34,7 +34,8 @@ public class MultiSegmentStream : FastReadOnlyNonSeekableStream
     )
     {
         if (articleBufferSize == 0)
-            return new UnbufferedMultiSegmentStream(segmentIds, usenetClient, expectedSegmentSize);
+            return new UnbufferedMultiSegmentStream(segmentIds, usenetClient, expectedSegmentSize,
+                failFastOnFirstSegment);
 
         return new MultiSegmentStream(segmentIds, usenetClient, articleBufferSize, usenetClient.PipeliningDepth,
             expectedSegmentSize, failFastOnFirstSegment, cancellationToken);

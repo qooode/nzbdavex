@@ -61,34 +61,25 @@ public class GetWebdavItemController(
         Response.Headers["Content-Encoding"] = "identity";
         Response.Headers["Accept-Ranges"] = "bytes";
 
-        // Resolve the suffix form ("bytes=-N", last N bytes) now that fileSize
-        // is known. Clamp at zero so an oversized suffix means "the whole file"
-        // rather than seeking before byte 0.
-        long? rangeStart = request.RangeStart;
-        long? rangeEnd = request.RangeEnd;
-        if (request.SuffixLength is { } suffixLen)
+        var rangeResult = HttpByteRangeParser.Parse(request.RangeHeader, fileSize);
+        if (rangeResult.Status == HttpByteRangeStatus.Unsatisfiable)
         {
-            rangeStart = Math.Max(0, fileSize - suffixLen);
-            rangeEnd = fileSize - 1;
+            await stream.DisposeAsync().ConfigureAwait(false);
+            Response.Headers["Content-Range"] = rangeResult.ContentRange;
+            Response.Headers["Content-Length"] = "0";
+            Response.StatusCode = StatusCodes.Status416RangeNotSatisfiable;
+            return Stream.Null;
         }
 
-        // Stash the effective start so HandleRequest can report playback
-        // position from the real offset (not from 0) for suffix-range reads.
-        HttpContext.Items["effectiveRangeStart"] = rangeStart ?? 0L;
+        var range = rangeResult.Range;
+        HttpContext.Items["effectiveRangeStart"] = range?.Start ?? 0L;
 
-        if (rangeStart is not null)
+        if (range is not null)
         {
-            // compute
-            var end = rangeEnd ?? (fileSize - 1);
-            var chunkSize = 1 + end - rangeStart.Value;
-
-            // seek
-            stream.Seek(rangeStart.Value, SeekOrigin.Begin);
-            if (rangeEnd is not null) stream = stream.LimitLength(chunkSize);
-
-            // set response headers
-            Response.Headers["Content-Range"] = $"bytes {rangeStart}-{end}/{fileSize}";
-            Response.Headers["Content-Length"] = chunkSize.ToString();
+            stream.Seek(range.Start, SeekOrigin.Begin);
+            stream = stream.LimitLength(range.Length);
+            Response.Headers["Content-Range"] = range.ContentRange;
+            Response.Headers["Content-Length"] = range.Length.ToString();
             Response.StatusCode = 206;
         }
         else

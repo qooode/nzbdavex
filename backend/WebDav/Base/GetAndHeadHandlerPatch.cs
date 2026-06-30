@@ -5,6 +5,7 @@ using NWebDav.Server.Helpers;
 using NWebDav.Server.Props;
 using NWebDav.Server.Stores;
 using NzbWebDAV.Services;
+using NzbWebDAV.Utils;
 
 namespace NzbWebDAV.WebDav.Base;
 
@@ -53,9 +54,6 @@ public class GetAndHeadHandlerPatch : IRequestHandler
         // Determine if we are invoked as HEAD
         var isHeadRequest = request.Method == HttpMethods.Head;
 
-        // Determine the requested range
-        var range = request.GetRange();
-
         // Obtain the WebDAV collection
         var entry = await _store.GetItemAsync(request.GetUri(), httpContext.RequestAborted).ConfigureAwait(false);
         if (entry == null)
@@ -101,6 +99,7 @@ public class GetAndHeadHandlerPatch : IRequestHandler
             {
                 // Set the response
                 response.SetStatus(DavStatusCode.Ok);
+                HttpByteRange? range = null;
 
                 // Set the expected content length
                 try
@@ -114,29 +113,25 @@ public class GetAndHeadHandlerPatch : IRequestHandler
 
                         // Determine the total length
                         var length = stream.Length;
+                        var totalLength = length;
 
                         // Check if a range was specified
+                        var rangeResult = HttpByteRangeParser.Parse(request.Headers.Range.FirstOrDefault(), totalLength);
+                        if (rangeResult.Status == HttpByteRangeStatus.Unsatisfiable)
+                        {
+                            response.Headers.ContentRange = rangeResult.ContentRange;
+                            response.ContentLength = 0;
+                            response.SetStatus((DavStatusCode)StatusCodes.Status416RangeNotSatisfiable);
+                            return true;
+                        }
+
+                        range = rangeResult.Range;
                         if (range != null)
                         {
-                            var start = range.Start ?? 0;
-                            var end = Math.Min(range.End ?? long.MaxValue, length - 1);
+                            length = range.Length;
+                            response.Headers.ContentRange = range.ContentRange;
 
-                            // Return 416 if the range start is beyond the end of the file
-                            if (start > end)
-                            {
-                                response.Headers.ContentRange = $"bytes */{stream.Length}";
-                                response.SetStatus((DavStatusCode)416);
-                                return true;
-                            }
-
-                            length = end - start + 1;
-
-                            // Write the range
-                            response.Headers.ContentRange = $"bytes {start}-{end}/{stream.Length}";
-
-                            // Set status to partial result if not all data can be sent
-                            if (length < stream.Length)
-                                response.SetStatus(DavStatusCode.PartialContent);
+                            response.SetStatus(DavStatusCode.PartialContent);
                         }
 
                         // Set the header, so the client knows how much data is required

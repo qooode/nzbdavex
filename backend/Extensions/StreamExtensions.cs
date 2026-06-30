@@ -12,6 +12,7 @@ public static class StreamExtensions
 
     public static async Task DiscardBytesAsync(this Stream stream, long count, CancellationToken ct = default)
     {
+        if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
         if (count == 0) return;
         var remaining = count;
         var throwaway = ArrayPool<byte>.Shared.Rent(1024);
@@ -21,7 +22,8 @@ public static class StreamExtensions
             {
                 var toRead = (int)Math.Min(remaining, throwaway.Length);
                 var read = await stream.ReadAsync(throwaway.AsMemory(0, toRead), ct).ConfigureAwait(false);
-                if (read == 0) break;
+                if (read == 0)
+                    throw new EndOfStreamException($"Could not discard {count} bytes because the stream ended early.");
                 remaining -= read;
             }
         }

@@ -89,9 +89,7 @@ public class DavMultipartFileStream : Stream
 
     public override long Seek(long offset, SeekOrigin origin)
     {
-        var absoluteOffset = origin == SeekOrigin.Begin ? offset
-            : origin == SeekOrigin.Current ? _position + offset
-            : throw new InvalidOperationException("SeekOrigin must be Begin or Current.");
+        var absoluteOffset = StreamSeek.Resolve(_position, Length, offset, origin);
         if (_position == absoluteOffset) return _position;
         _position = absoluteOffset;
         _innerStream?.Dispose();
